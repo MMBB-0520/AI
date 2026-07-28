@@ -16,12 +16,26 @@ class IntentPredictor:
     Predict user intent using the trained SVM model.
     """
 
-    def __init__(self):
+    def __init__(self, model_name):
         """Load trained model and preprocessing tools."""
 
-        self.model = joblib.load("models/svm.pkl")
-        self.vectorizer = joblib.load("models/vectorizer.pkl")
-        self.label_encoder = joblib.load("models/label_encoder.pkl")
+        if model_name == "Support Vector Machine":
+
+            self.model = joblib.load("models/svm.pkl")
+            self.vectorizer = joblib.load("models/svm_vectorizer.pkl")
+            self.label_encoder = joblib.load("models/svm_label_encoder.pkl")
+
+        elif model_name == "Naive Bayes":
+
+            self.model = joblib.load("models/nb.pkl")
+            self.vectorizer = joblib.load("models/nb_vectorizer.pkl")
+            self.label_encoder = joblib.load("models/nb_label_encoder.pkl")
+
+        elif model_name == "Logistic Regression":
+
+            self.model = joblib.load("models/lr.pkl")
+            self.vectorizer = joblib.load("models/lr_vectorizer.pkl")
+            self.label_encoder = joblib.load("models/lr_label_encoder.pkl")
 
     def predict(self, user_message):
         """
@@ -39,11 +53,18 @@ class IntentPredictor:
 
         # Predict intent
         prediction = self.model.predict(text_vector)
-
+        
+        # Predict confidence
+        probabilities = self.model.predict_proba(text_vector)
+        confidence = probabilities.max()
+        
         # Convert numeric label back to text
         intent = self.label_encoder.inverse_transform(prediction)
 
-        return intent[0]
+        return {
+            "intent": intent[0],
+            "confidence": confidence
+        }
 
 
 # Test predictor

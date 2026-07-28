@@ -13,9 +13,9 @@ responses = {
 
     # Greeting
     "greeting": [
-        "Hello! Welcome to Oriented Resort. How may I assist you today?",
+        f"Hello! Welcome to {HOTEL_NAME}. How may I assist you today?",
         "Hi! I'm BookMate. How can I help you?",
-        "Welcome to Oriented Resort! Feel free to ask me anything."
+        f"Welcome to {HOTEL_NAME}! Feel free to ask me anything."
     ],
 
     # Room Availability
@@ -129,6 +129,6 @@ def get_response(intent):
     return random.choice(
         responses.get(
             intent,
-            ["I'm sorry, I didn't understand your question."]
+            ["I'm sorry, I didn't understand your question. Could you please rephrase it?"]
         )
     )
