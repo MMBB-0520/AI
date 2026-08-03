@@ -13,110 +13,100 @@ Pipeline:
     6. Save the trained model + vectorizer for use by chatbot.py
 """
 
-import json
-import re
-import string
+import sys
+import os
+import pandas as pd
 import joblib
-import numpy as np
 import matplotlib.pyplot as plt
 
+from sklearn.model_selection import train_test_split, StratifiedKFold, cross_val_score
+from sklearn.preprocessing import LabelEncoder
 from sklearn.feature_extraction.text import CountVectorizer
 from sklearn.naive_bayes import MultinomialNB
-from sklearn.model_selection import train_test_split, StratifiedKFold, cross_val_score
 from sklearn.metrics import (
     accuracy_score,
-    precision_recall_fscore_support,
-    classification_report,
+    precision_score,
+    recall_score,
+    f1_score,
     confusion_matrix,
-    ConfusionMatrixDisplay,
+    classification_report,
+    ConfusionMatrixDisplay
 )
 
-DATA_PATH = "dataset/intents.csv"
-MODEL_PATH = "models/naive_bayes.pkl"
-VECTORIZER_PATH = "models/vectorizer.pkl"
-CONFUSION_MATRIX_PATH = "models/confusion_matrix.png"
+# Add root directory to sys.path to allow imports from chatbot
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+from chatbot.preprocessing import preprocess_text
 
-
-def clean_text(text: str) -> str:
-    """Lowercase and strip punctuation from a sentence."""
-    text = text.lower()
-    text = re.sub(f"[{re.escape(string.punctuation)}]", " ", text)
-    text = re.sub(r"\s+", " ", text).strip()
-    return text
-
-
-def load_dataset(path: str):
-    with open(path, "r", encoding="utf-8") as f:
-        data = json.load(f)
-
-    texts, labels = [], []
-    for intent in data["intents"]:
-        tag = intent["tag"]
-        for pattern in intent["patterns"]:
-            texts.append(clean_text(pattern))
-            labels.append(tag)
-    return texts, labels
+DATASET_PATH = "dataset/intents.csv"
+MODEL_PATH = "models/nb.pkl"
+VECTORIZER_PATH = "models/nb_vectorizer.pkl"
+ENCODER_PATH = "models/nb_label_encoder.pkl"
+CM_PATH = "models/nb_confusion_matrix.png"
 
 
 def main():
-    print("Loading dataset...")
-    texts, labels = load_dataset(DATA_PATH)
-    print(f"Total training examples: {len(texts)}")
-    print(f"Number of intents: {len(set(labels))}")
+    print("========== Loading Dataset (Naive Bayes) ==========")
+    df = pd.read_csv(DATASET_PATH)
 
-    # 80/20 stratified split so every intent appears in both sets
+    print(f"Total dataset rows: {len(df)}")
+    print(f"Unique intents: {df['intent'].nunique()}")
+
+    # Apply preprocessing pipeline
+    print("Applying NLP preprocessing (normalization, tokenization, lemmatization)...")
+    X_raw = df["text"]
+    X_cleaned = X_raw.apply(preprocess_text)
+    y_raw = df["intent"]
+
+    label_encoder = LabelEncoder()
+    y = label_encoder.fit_transform(y_raw)
+
+    vectorizer = CountVectorizer(ngram_range=(1, 2))
+    X = vectorizer.fit_transform(X_cleaned)
+
     X_train, X_test, y_train, y_test = train_test_split(
-        texts, labels, test_size=0.2, random_state=42, stratify=labels
+        X, y, test_size=0.20, random_state=42, stratify=y
     )
 
-    # Bag-of-words vectorisation with unigrams + bigrams
-    # (CountVectorizer outperformed TF-IDF for this dataset during tuning,
-    #  which fits Naive Bayes' assumption of raw term frequencies)
-    vectorizer = CountVectorizer(stop_words="english", ngram_range=(1, 2))
-    X_train_vec = vectorizer.fit_transform(X_train)
-    X_test_vec = vectorizer.transform(X_test)
+    print("Training Multinomial Naive Bayes Model...")
+    nb_model = MultinomialNB(alpha=0.1)
+    nb_model.fit(X_train, y_train)
 
-    # Train Naive Bayes (small alpha since the dataset/vocabulary is compact)
-    model = MultinomialNB(alpha=0.1)
-    model.fit(X_train_vec, y_train)
-
-    # 5-fold stratified cross-validation on the full dataset gives a more
-    # reliable estimate of performance than a single small train/test split
-    X_all_vec = vectorizer.transform(texts)
+    # 5-fold Stratified Cross Validation
     skf = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
-    cv_scores = cross_val_score(MultinomialNB(alpha=0.1), X_all_vec, labels, cv=skf)
-    print(f"\n5-fold Cross-Validation Accuracy: {cv_scores.mean():.4f} "
-          f"(+/- {cv_scores.std():.4f})")
+    cv_scores = cross_val_score(MultinomialNB(alpha=0.1), X, y, cv=skf)
+    print(f"5-fold CV Accuracy: {cv_scores.mean():.4f} (+/- {cv_scores.std():.4f})")
 
-    # Evaluate on the held-out test split
-    y_pred = model.predict(X_test_vec)
+    y_pred = nb_model.predict(X_test)
 
-    acc = accuracy_score(y_test, y_pred)
-    precision, recall, f1, _ = precision_recall_fscore_support(
-        y_test, y_pred, average="macro", zero_division=0
-    )
+    accuracy = accuracy_score(y_test, y_pred)
+    precision = precision_score(y_test, y_pred, average="macro", zero_division=0)
+    recall = recall_score(y_test, y_pred, average="macro", zero_division=0)
+    f1 = f1_score(y_test, y_pred, average="macro", zero_division=0)
 
-    print("\n===== Evaluation Results (Naive Bayes) =====")
-    print(f"Accuracy : {acc:.4f}")
-    print(f"Precision (macro): {precision:.4f}")
-    print(f"Recall (macro)   : {recall:.4f}")
-    print(f"F1-score (macro) : {f1:.4f}")
-    print("\nDetailed classification report:")
-    print(classification_report(y_test, y_pred, zero_division=0))
+    print("\n========== Evaluation Results (Naive Bayes) ==========")
+    print(f"Accuracy  : {accuracy:.4f}")
+    print(f"Precision : {precision:.4f}")
+    print(f"Recall    : {recall:.4f}")
+    print(f"F1 Score  : {f1:.4f}")
 
-    # Confusion matrix plot
-    labels_sorted = sorted(set(labels))
-    cm = confusion_matrix(y_test, y_pred, labels=labels_sorted)
-    fig, ax = plt.subplots(figsize=(9, 8))
-    disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=labels_sorted)
-    disp.plot(ax=ax, xticks_rotation=45, cmap="Blues", colorbar=False)
+    print("\n========== Classification Report ==========")
+    print(classification_report(y_test, y_pred, target_names=label_encoder.classes_, zero_division=0))
+
+    # Confusion Matrix
+    cm = confusion_matrix(y_test, y_pred)
+    disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=label_encoder.classes_)
+    fig, ax = plt.subplots(figsize=(10, 8))
+    disp.plot(ax=ax, xticks_rotation=45, cmap="Blues")
     plt.title("Naive Bayes Intent Classification - Confusion Matrix")
     plt.tight_layout()
-    plt.savefig(CONFUSION_MATRIX_PATH, dpi=150)
-    print(f"\nConfusion matrix saved to {CONFUSION_MATRIX_PATH}")
+    plt.savefig(CM_PATH)
 
-    # Save model + vectorizer
-    joblib.dump(model, MODEL_PATH)
+    print("\nSaving trained Naive Bayes model & preprocessors...")
+    joblib.dump(nb_model, MODEL_PATH)
     joblib.dump(vectorizer, VECTORIZER_PATH)
-    print(f"Model saved to {MODEL_PATH}")
-    print(f"Vectorizer saved to {VECTORIZER_PATH}")
+    joblib.dump(label_encoder, ENCODER_PATH)
+    print("Naive Bayes Model trained and saved successfully!")
+
+
+if __name__ == "__main__":
+    main()
