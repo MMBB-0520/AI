@@ -31,9 +31,9 @@ with st.sidebar:
     model = st.selectbox(
         "Machine Learning Model",
         [
+            "Logistic Regression",
             "Support Vector Machine",
-            "Naive Bayes",
-            "Logistic Regression"
+            "Naive Bayes"
         ]
     )
 

@@ -33,7 +33,7 @@ class IntentPredictor:
 
         elif model_name == "Logistic Regression":
 
-            self.model = joblib.load("models/lr.pkl")
+            self.model = joblib.load("models/logistic_regression.pkl")
             self.vectorizer = joblib.load("models/lr_vectorizer.pkl")
             self.label_encoder = joblib.load("models/lr_label_encoder.pkl")
 
