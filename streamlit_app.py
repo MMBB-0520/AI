@@ -8,6 +8,7 @@ from chatbot.response import get_response
 from chatbot.hotel_info import HOTEL_NAME
 from chatbot.booking import process_booking
 from chatbot.preprocessing import process_input
+from chatbot.entity_extractor import extract_entities
 
 # Minimum confidence threshold for intent classification
 CONFIDENCE_THRESHOLD = 0.50
@@ -104,9 +105,10 @@ for message in st.session_state.messages:
         if message["role"] == "assistant" and "prediction" in message:
             pred = message["prediction"]
             used_model = pred.get("model", model)
-            st.caption(
-                f"🧠 Model: **{used_model}** | Intent: **{pred['intent']}** | Confidence: **{pred['confidence']:.2%}**"
-            )
+            caption_text = f"🧠 Model: **{used_model}** | Intent: **{pred['intent']}** | Confidence: **{pred['confidence']:.2%}**"
+            if pred.get("entities"):
+                caption_text += f" | 🏷️ Entities: `{pred['entities']}`"
+            st.caption(caption_text)
 
 # Handle user input
 user_input = st.chat_input("Type your message...")
@@ -121,11 +123,16 @@ if user_input:
     booking = st.session_state.booking
     prediction_info = None
 
+    # Perform Entity Extraction
+    extracted_data = extract_entities(user_input)
+    extracted_entities = extracted_data["entities_found"]
+
     if booking["active"]:
         bot_reply = process_booking(
             booking,
             user_input,
-            None
+            None,
+            extracted_entities=extracted_entities
         )
     else:
         # Preprocessing & Intent Prediction
@@ -139,7 +146,8 @@ if user_input:
             "intent": intent,
             "confidence": confidence,
             "cleaned_text": nlp_details["preprocessed_text"],
-            "detected_pii": nlp_details["detected_pii"]
+            "detected_pii": nlp_details["detected_pii"],
+            "entities": extracted_entities
         }
 
         # Fallback handling for low confidence predictions
@@ -153,7 +161,8 @@ if user_input:
             booking_reply = process_booking(
                 booking,
                 user_input,
-                intent
+                intent,
+                extracted_entities=extracted_entities
             )
 
             if booking_reply is not None:
@@ -171,3 +180,4 @@ if user_input:
 
     st.session_state.messages.append(msg_obj)
     st.rerun()
+
