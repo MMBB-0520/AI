@@ -1,17 +1,22 @@
 """
-BookMate Chatbot - Entity Extraction Module
-===========================================
+BookMate Chatbot
+Entity Extraction
 
 Purpose:
-Extract key domain entities/slots from user input text for hotel reservation and inquiry handling.
+Extract key domain entities/slots from user input
+for hotel reservation and inquiry handling.
 
-Entities Extracted:
-- room_type (Standard Room, Deluxe Room, Family Suite, Ocean Villa)
-- guests (number of guests/people)
-- check_in / check_out (dates)
-- nights (number of stay nights)
-- name (guest name)
-- phone / email (contact information)
+Entities:
+- booking_id
+- room_type
+- rooms
+- guests
+- check_in
+- check_out
+- nights
+- name
+- email
+- phone
 """
 
 import re
@@ -19,180 +24,588 @@ import sys
 import os
 from datetime import datetime, timedelta
 
-# Ensure parent directory is in sys.path for module imports
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-from chatbot.hotel_info import ROOM_PRICES
+# Ensure parent directory is available for imports
+sys.path.append(
+    os.path.abspath(
+        os.path.join(os.path.dirname(__file__), "..")
+    )
+)
+
+from chatbot.hotel_info import ROOM_TYPES, ROOM_TYPE_ALIASES
 
 
 class EntityExtractor:
     """
-    Rule-based & Regex Domain Entity Extractor for BookMate Chatbot.
+    Rule-based and regex-based entity extractor
+    for BookMate hotel chatbot.
     """
 
     def __init__(self):
-        # Room Type mapping (normalized search term -> official room name)
-        self.room_types_map = {
-            "standard": "Standard Room",
-            "standard room": "Standard Room",
-            "deluxe": "Deluxe Room",
-            "deluxe room": "Deluxe Room",
-            "family": "Family Suite",
-            "family suite": "Family Suite",
-            "suite": "Family Suite",
-            "ocean villa": "Ocean Villa",
-            "ocean": "Ocean Villa",
-            "villa": "Ocean Villa"
+        self.room_types_map = ROOM_TYPE_ALIASES
+
+        self.word_to_num = {
+            "one": 1,
+            "two": 2,
+            "three": 3,
+            "four": 4,
+            "five": 5,
+            "six": 6,
+            "seven": 7,
+            "eight": 8,
+            "nine": 9,
+            "ten": 10
         }
 
+    # ROOM TYPE
     def extract_room_type(self, text: str) -> str | None:
-        """Extract room type from user message."""
+        """
+        Extract official hotel room type.
+
+        Example:
+            "I want a deluxe room"
+            -> "Deluxe Room"
+        """
+
+        if not text:
+            return None
+
         text_lower = text.lower()
-        # Sort keys by length descending to prioritize longer phrases like 'deluxe room' over 'deluxe'
-        for key in sorted(self.room_types_map.keys(), key=len, reverse=True):
-            pattern = r'\b' + re.escape(key) + r'\b'
+
+        # Longer phrases first
+        for alias in sorted(
+            self.room_types_map.keys(),
+            key=len,
+            reverse=True
+        ):
+            pattern = r"\b" + re.escape(alias) + r"\b"
+
             if re.search(pattern, text_lower):
-                return self.room_types_map[key]
+                return self.room_types_map[alias]
+
         return None
 
+    # NUMBER HELPER
+    def _extract_number(self, text: str) -> int | None:
+        """
+        Extract a numeric value from text.
+
+        Supports:
+            2
+            two
+            5
+            five
+        """
+
+        if not text:
+            return None
+
+        match = re.search(r"\b(\d+)\b", text)
+
+        if match:
+            return int(match.group(1))
+
+        text_lower = text.lower()
+
+        for word, number in self.word_to_num.items():
+            if re.search(r"\b" + word + r"\b", text_lower):
+                return number
+
+        return None
+
+    # ROOMS
+    def extract_rooms(self, text: str) -> int | None:
+        """
+        Extract number of rooms.
+
+        Examples:
+            "2 rooms" -> 2
+            "two rooms" -> 2
+            "I need 3 room" -> 3
+        """
+
+        if not text:
+            return None
+
+        text_lower = text.lower()
+
+        match = re.search(
+            r"\b(\d+)\s*(?:room|rooms)\b",
+            text_lower
+        )
+
+        if match:
+            return int(match.group(1))
+
+        for word, number in self.word_to_num.items():
+            pattern = (
+                r"\b"
+                + word
+                + r"\s+(?:room|rooms)\b"
+            )
+
+            if re.search(pattern, text_lower):
+                return number
+
+        return None
+
+    # GUESTS
     def extract_guests(self, text: str) -> int | None:
-        """Extract guest count from user message."""
+        """
+        Extract total number of guests.
+
+        Examples:
+            "2 guests" -> 2
+            "3 people" -> 3
+            "4 pax" -> 4
+            "2 adults" -> 2
+            "for 5" -> 5
+        """
+
+        if not text:
+            return None
+
         text_lower = text.lower()
 
-        # Match phrases: "2 guests", "3 people", "1 person", "for 4 pax", "2 adults"
-        match = re.search(r'\b(\d+)\s*(?:people|person|guest|guests|pax|adult|adults)\b', text_lower)
+        # Numeric guest expressions
+        match = re.search(
+            r"\b(\d+)\s*"
+            r"(?:people|person|guest|guests|pax|adult|adults)\b",
+            text_lower
+        )
+
         if match:
             return int(match.group(1))
 
-        # Match "for N" / "with N" in booking context
-        match = re.search(r'\b(?:for|with)\s+(\d+)\b', text_lower)
-        if match:
-            return int(match.group(1))
+        # Word-number guest expressions
+        for word, number in self.word_to_num.items():
+            pattern = (
+                r"\b"
+                + word
+                + r"\s+"
+                r"(?:people|person|guest|guests|pax|adult|adults)\b"
+            )
 
-        # Word numbers: "two guests", "three people"
-        word_to_num = {
-            "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
-            "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10
-        }
-        for word, num in word_to_num.items():
-            pattern = r'\b' + word + r'\s+(?:people|person|guest|guests|pax|adult|adults)\b'
             if re.search(pattern, text_lower):
-                return num
+                return number
+
+        # Booking context:
+        # "room for 4"
+        # "booking for 2"
+        match = re.search(
+            r"\b(?:for|with)\s+(\d+)\s*"
+            r"(?:people|person|guest|guests|pax)?\b",
+            text_lower
+        )
+
+        if match:
+            return int(match.group(1))
 
         return None
 
+    # NIGHTS
     def extract_nights(self, text: str) -> int | None:
-        """Extract stay duration in nights."""
+        """
+        Extract explicit number of nights.
+
+        Examples:
+            "3 nights" -> 3
+            "two nights" -> 2
+
+        Note:
+            "3 days" is NOT treated as 3 nights.
+        """
+
+        if not text:
+            return None
+
         text_lower = text.lower()
-        match = re.search(r'\b(\d+)\s*(?:night|nights|day|days)\b', text_lower)
+
+        match = re.search(
+            r"\b(\d+)\s*(?:night|nights)\b",
+            text_lower
+        )
+
         if match:
             return int(match.group(1))
 
-        word_to_num = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5}
-        for word, num in word_to_num.items():
-            pattern = r'\b' + word + r'\s+(?:night|nights)\b'
+        for word, number in self.word_to_num.items():
+            pattern = (
+                r"\b"
+                + word
+                + r"\s+(?:night|nights)\b"
+            )
+
             if re.search(pattern, text_lower):
-                return num
+                return number
+
         return None
 
-    def extract_dates(self, text: str) -> dict:
+    # DATE EXTRACTION
+    def _normalize_date(
+        self,
+        date_string: str,
+        reference_date: datetime | None = None
+    ) -> str | None:
+        """
+        Convert recognized date expressions into YYYY-MM-DD.
+
+        Supports:
+            YYYY-MM-DD
+            YYYY/MM/DD
+            DD-MM-YYYY
+            DD/MM/YYYY
+            DD.MM.YYYY
+            today
+            tomorrow
+        """
+
+        if not date_string:
+            return None
+
+        if reference_date is None:
+            reference_date = datetime.now()
+
+        value = date_string.strip().lower()
+
+        # Relative dates
+        if value == "today":
+            return reference_date.strftime("%Y-%m-%d")
+
+        if value == "tomorrow":
+            return (
+                reference_date + timedelta(days=1)
+            ).strftime("%Y-%m-%d")
+
+        # Explicit date formats
+        formats = [
+            "%Y-%m-%d",
+            "%Y/%m/%d",
+            "%Y.%m.%d",
+
+            "%d-%m-%Y",
+            "%d/%m/%Y",
+            "%d.%m.%Y",
+
+            "%d-%m-%y",
+            "%d/%m/%y"
+        ]
+
+        for fmt in formats:
+            try:
+                parsed = datetime.strptime(value, fmt)
+                return parsed.strftime("%Y-%m-%d")
+            except ValueError:
+                continue
+
+        return None
+
+    def extract_dates(
+        self,
+        text: str,
+        reference_date: datetime | None = None
+    ) -> dict:
         """
         Extract check-in and check-out dates.
-        Returns dict: {'check_in': str|None, 'check_out': str|None}
+
+        Returns:
+            {
+                "check_in": str | None,
+                "check_out": str | None
+            }
         """
+
+        results = {
+            "check_in": None,
+            "check_out": None
+        }
+
+        if not text:
+            return results
+
+        if reference_date is None:
+            reference_date = datetime.now()
+
         text_lower = text.lower()
-        results = {"check_in": None, "check_out": None}
 
-        # 1. Match ISO formatted dates (e.g., 2026-10-01 or 2026/10/01)
-        iso_dates = re.findall(r'\b\d{4}[-/]\d{1,2}[-/]\d{1,2}\b', text)
+        # 1. ISO dates
+        iso_dates = re.findall(
+            r"\b\d{4}[-/]\d{1,2}[-/]\d{1,2}\b",
+            text_lower
+        )
+
         if len(iso_dates) >= 2:
-            results["check_in"] = iso_dates[0]
-            results["check_out"] = iso_dates[1]
-            return results
-        elif len(iso_dates) == 1:
-            results["check_in"] = iso_dates[0]
+            results["check_in"] = self._normalize_date(
+                iso_dates[0],
+                reference_date
+            )
 
-        # 2. Match "from [DATE] to [DATE]" pattern
-        from_to_match = re.search(r'from\s+([a-zA-Z0-9/\-\s,]+?)\s+to\s+([a-zA-Z0-9/\-\s,]+)', text_lower)
+            results["check_out"] = self._normalize_date(
+                iso_dates[1],
+                reference_date
+            )
+
+            return results
+
+        if len(iso_dates) == 1:
+            results["check_in"] = self._normalize_date(
+                iso_dates[0],
+                reference_date
+            )
+
+        # 2. from X to Y
+        from_to_match = re.search(
+            r"\bfrom\s+(.+?)\s+to\s+(.+?)(?:\.|,|$)",
+            text_lower
+        )
+
         if from_to_match:
-            cin_str = from_to_match.group(1).strip()
-            cout_str = from_to_match.group(2).strip()
-            results["check_in"] = cin_str
-            results["check_out"] = cout_str
+            checkin_raw = from_to_match.group(1).strip()
+            checkout_raw = from_to_match.group(2).strip()
+
+            checkin = self._normalize_date(
+                checkin_raw,
+                reference_date
+            )
+
+            checkout = self._normalize_date(
+                checkout_raw,
+                reference_date
+            )
+
+            if checkin:
+                results["check_in"] = checkin
+
+            if checkout:
+                results["check_out"] = checkout
+
             return results
 
-        # 3. Relative date terms
-        today = datetime.now()
-        if "tomorrow" in text_lower:
-            results["check_in"] = (today + timedelta(days=1)).strftime("%Y-%m-%d")
-        elif "today" in text_lower:
-            results["check_in"] = today.strftime("%Y-%m-%d")
+        # 3. tomorrow / today
+        if re.search(r"\btomorrow\b", text_lower):
+            results["check_in"] = (
+                reference_date + timedelta(days=1)
+            ).strftime("%Y-%m-%d")
+
+        elif re.search(r"\btoday\b", text_lower):
+            results["check_in"] = (
+                reference_date
+            ).strftime("%Y-%m-%d")
 
         return results
 
+    # NAME
     def extract_name(self, text: str) -> str | None:
-        """Extract guest name if explicitly introduced."""
+        """
+        Extract guest name only from explicit name patterns.
+
+        Examples:
+            "My name is John Doe"
+            "Name: John Doe"
+            "Please book under John Doe"
+        """
+
+        if not text:
+            return None
+
         patterns = [
-            r"\bmy name is ([a-zA-Z\s]+?)(?:\.|$|,| and)",
-            r"\bi am ([a-zA-Z\s]+?)(?:\.|$|,| and)",
-            r"\bcall me ([a-zA-Z\s]+?)(?:\.|$|,| and)",
-            r"\bname[:\s]+([a-zA-Z\s]+?)(?:\.|$|,)"
+            r"\bmy\s+name\s+is\s+([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ' -]{1,79})",
+            r"\bmy\s+name's\s+([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ' -]{1,79})",
+            r"\bname\s*:\s*([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ' -]{1,79})",
+            r"\bname\s+is\s+([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ' -]{1,79})",
+            r"\bbook\s+(?:the\s+)?reservation\s+under\s+([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ' -]{1,79})"
         ]
+
         for pattern in patterns:
-            match = re.search(pattern, text, re.IGNORECASE)
+            match = re.search(
+                pattern,
+                text,
+                re.IGNORECASE
+            )
+
             if match:
                 name = match.group(1).strip()
-                # Filter out non-name expressions
-                if name.lower() not in ["looking", "trying", "booking", "here", "interested"]:
+
+                # Remove trailing booking-related words
+                name = re.split(
+                    r"\s+(?:and|with|for|email|phone)\b",
+                    name,
+                    flags=re.IGNORECASE
+                )[0].strip()
+
+                if len(name) >= 2 and not name.isdigit():
                     return name.title()
+
         return None
 
+    # CONTACT INFORMATION
     def extract_contact_info(self, text: str) -> dict:
-        """Extract email and phone number."""
-        email_pattern = r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}'
-        phone_pattern = r'\b(?:\+?\d{1,3}[-.\s]?)?\(?\d{2,4}\)?[-.\s]?\d{3,4}[-.\s]?\d{3,4}\b'
+        """
+        Extract email and phone number.
+        """
 
-        emails = re.findall(email_pattern, text)
-        phones = re.findall(phone_pattern, text)
+        if not text:
+            return {
+                "email": None,
+                "phone": None
+            }
 
-        valid_phones = [p for p in phones if len(re.sub(r'\D', '', p)) >= 7]
+        email_pattern = (
+            r"[a-zA-Z0-9._%+-]+"
+            r"@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}"
+        )
+
+        phone_pattern = (
+            r"(?<!\d)"
+            r"(?:\+?60|0)"
+            r"[\s.-]?"
+            r"\d{1,3}"
+            r"[\s.-]?"
+            r"\d{3,4}"
+            r"[\s.-]?"
+            r"\d{3,4}"
+            r"(?!\d)"
+        )
+
+        emails = re.findall(
+            email_pattern,
+            text
+        )
+
+        phones = re.findall(
+            phone_pattern,
+            text
+        )
+
+        valid_phones = []
+
+        for phone in phones:
+            digits = re.sub(r"\D", "", phone)
+
+            if 9 <= len(digits) <= 12:
+                valid_phones.append(phone.strip())
 
         return {
             "email": emails[0] if emails else None,
             "phone": valid_phones[0] if valid_phones else None
         }
 
+    # BOOKING ID
     def extract_booking_id(self, text: str) -> str | None:
-        """Extract booking ID (e.g., BK1234)."""
-        match = re.search(r'\b(BK[-_]?\d{4,6})\b', text, re.IGNORECASE)
+        """
+        Extract booking ID.
+
+        Examples:
+            BK1234
+            BK-1234
+            BK_1234
+        """
+
+        if not text:
+            return None
+
+        match = re.search(
+            r"\b(BK[-_]?\d{4,6})\b",
+            text,
+            re.IGNORECASE
+        )
+
         if match:
-            return match.group(1).upper().replace("-", "").replace("_", "")
+            return (
+                match.group(1)
+                .upper()
+                .replace("-", "")
+                .replace("_", "")
+            )
+
         return None
 
-    def extract_all(self, text: str) -> dict:
+    # CALCULATE NIGHTS
+    def calculate_nights(
+        self,
+        check_in: str | None,
+        check_out: str | None
+    ) -> int | None:
         """
-        Perform complete entity extraction on user text.
+        Calculate number of nights from check-in/check-out dates.
+        """
 
-        Returns:
-            dict containing:
-            - all_entities: dict with all entity keys (value is None if not found)
-            - entities_found: dict containing only successfully extracted entities
+        if not check_in or not check_out:
+            return None
+
+        try:
+            checkin_date = datetime.strptime(
+                check_in,
+                "%Y-%m-%d"
+            ).date()
+
+            checkout_date = datetime.strptime(
+                check_out,
+                "%Y-%m-%d"
+            ).date()
+
+            nights = (checkout_date - checkin_date).days
+
+            if nights > 0:
+                return nights
+
+        except ValueError:
+            pass
+
+        return None
+
+    # EXTRACT ALL
+    def extract_all(
+        self,
+        text: str,
+        reference_date: datetime | None = None
+    ) -> dict:
         """
-        dates = self.extract_dates(text)
+        Perform complete entity extraction.
+        """
+
+        dates = self.extract_dates(
+            text,
+            reference_date
+        )
+
         contact = self.extract_contact_info(text)
+
+        calculated_nights = self.calculate_nights(
+            dates["check_in"],
+            dates["check_out"]
+        )
+
+        explicit_nights = self.extract_nights(text)
+
+        # Prefer calculated nights when both dates exist
+        nights = (
+            calculated_nights
+            if calculated_nights is not None
+            else explicit_nights
+        )
 
         entities = {
             "booking_id": self.extract_booking_id(text),
+
             "room_type": self.extract_room_type(text),
+            "rooms": self.extract_rooms(text),
             "guests": self.extract_guests(text),
-            "nights": self.extract_nights(text),
+
             "check_in": dates["check_in"],
             "check_out": dates["check_out"],
+            "nights": nights,
+
             "name": self.extract_name(text),
+
             "email": contact["email"],
             "phone": contact["phone"]
         }
 
-        entities_found = {k: v for k, v in entities.items() if v is not None}
+        entities_found = {
+            key: value
+            for key, value in entities.items()
+            if value is not None
+        }
 
         return {
             "all_entities": entities,
@@ -202,24 +615,48 @@ class EntityExtractor:
 # Default global instance
 _default_extractor = EntityExtractor()
 
-
-def extract_entities(text: str) -> dict:
+def extract_entities(
+    text: str,
+    reference_date: datetime | None = None
+) -> dict:
     """
-    Convenience function returning dictionary of extracted entities from user text.
+    Convenience function returning extracted entities.
     """
-    return _default_extractor.extract_all(text)
 
+    return _default_extractor.extract_all(
+        text,
+        reference_date
+    )
 
+# Testing
 if __name__ == "__main__":
+    test_reference_date = datetime(2026, 8, 12)
+
     test_queries = [
         "I want to book a Deluxe room for 2 guests from 2026-10-01 to 2026-10-05.",
-        "My name is John Doe, email john@example.com, phone +60123456789.",
+
+        "I need 2 standard rooms for 4 people.",
+
         "How much is the ocean villa for 3 nights?",
-        "Can I reserve a family suite for 4 people starting tomorrow?"
+
+        "Can I reserve a family suite for 4 people starting tomorrow?",
+
+        "My name is John Doe, email john@example.com, phone +60123456789.",
+
+        "Please check my booking BK12345."
     ]
 
     print("=== Testing EntityExtractor ===")
-    for q in test_queries:
-        res = extract_entities(q)
-        print(f"\nQuery: '{q}'")
-        print(f"Extracted Entities: {res['entities_found']}")
+
+    for query in test_queries:
+
+        result = extract_entities(
+            query,
+            reference_date=test_reference_date
+        )
+
+        print(f"\nQuery: {query}")
+        print(
+            "Extracted Entities:",
+            result["entities_found"]
+        )

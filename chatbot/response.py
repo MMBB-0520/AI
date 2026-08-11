@@ -80,7 +80,8 @@ responses = {
     "parking": [
         "Free parking is available for all hotel guests.",
         "Yes! We provide complimentary parking throughout your stay.",
-        "Parking is free and available 24 hours."
+        "Parking is free and available 24 hours.",
+        f"Yes! {PARKING}"
     ],
 
     # Check-in / Check-out
@@ -106,15 +107,15 @@ responses = {
 
     # Contact
     "contact": [
-        "You can contact us at +60 4-987 8888.",
-        "Our email address is booking@orientedresort.com.",
-        "Feel free to call us or email us anytime for assistance."
+        f"You can contact us at {PHONE}.",
+        f"Our email address is {EMAIL}.",
+        f"Feel free to call us at {PHONE} or email us at {EMAIL} for assistance."
     ],
 
     # Goodbye
     "goodbye": [
-        "Thank you for choosing Oriented Resort. Have a wonderful day!",
-        "Goodbye! We hope to welcome you soon.",
+        f"Thank you for choosing {HOTEL_NAME}. Have a wonderful day!",
+        f"Goodbye! We hope to welcome you to {HOTEL_NAME} soon.",
         "Take care and have a pleasant day!"
     ]
 
@@ -125,7 +126,6 @@ def get_response(intent):
     """
     Return a random response based on the predicted intent.
     """
-
     return random.choice(
         responses.get(
             intent,

@@ -30,5 +30,32 @@
         "check_in": "s",
         "check_out": "s",
         "guests": "s"
+    },
+    {
+        "booking_id": "BK3126",
+        "name": "John Doe",
+        "room": "Deluxe Room",
+        "check_in": "2026-10-05",
+        "check_out": "2026-10-05",
+        "guests": 2,
+        "status": "Confirmed"
+    },
+    {
+        "booking_id": "BK6524",
+        "name": "John Doe",
+        "room": "Deluxe Room",
+        "check_in": "2026-10-05",
+        "check_out": "2026-10-05",
+        "guests": 2,
+        "status": "Confirmed"
+    },
+    {
+        "booking_id": "BK4657",
+        "name": "John Doe",
+        "room": "Deluxe Room",
+        "check_in": "2026-10-05",
+        "check_out": "2026-10-05",
+        "guests": 2,
+        "status": "Confirmed"
     }
 ]

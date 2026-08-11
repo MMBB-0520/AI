@@ -18,7 +18,6 @@ from nltk.tokenize import word_tokenize
 from nltk.stem import WordNetLemmatizer
 from nltk.corpus import wordnet
 from nltk.metrics.distance import edit_distance
-from textblob import TextBlob
 
 # Auto-download required NLTK resources silently
 REQUIRED_NLTK_RESOURCES = [
@@ -38,6 +37,22 @@ for res_path, res_name in REQUIRED_NLTK_RESOURCES:
             nltk.download(res_name, quiet=True)
         except Exception:
             pass
+
+
+def _is_luhn_valid(number_str: str) -> bool:
+    """Validate numeric string using Luhn algorithm (mod 10)."""
+    digits = [int(ch) for ch in number_str if ch.isdigit()]
+    if len(digits) < 13 or len(digits) > 19:
+        return False
+    checksum = 0
+    reverse_digits = digits[::-1]
+    for i, d in enumerate(reverse_digits):
+        if i % 2 == 1:
+            d = d * 2
+            if d > 9:
+                d -= 9
+        checksum += d
+    return checksum % 10 == 0
 
 
 class TextPreprocessor:
@@ -64,11 +79,52 @@ class TextPreprocessor:
             "pric": "price",
             "chkin": "checkin",
             "chkout": "checkout",
-            "cancle": "cancel"
+            "cancle": "cancel",
+            "reserv": "reserve",
+            "resrvation": "reservation",
+            "delux": "deluxe",
+            "availble": "available",
+            "avialable": "available",
+            "paymnt": "payment",
+            "locaton": "location"
+        }
+
+        # Structured Domain Vocabularies for Proper Nouns and Hotel Concepts
+        self.domain_vocab = {
+            "hello", "hi", "hey", "booking", "book", "room", "price", "cost",
+            "checkin", "checkout", "wifi", "parking", "breakfast", "contact",
+            "cancel", "deluxe", "suite", "location", "status", "payment",
+            "king", "queen", "minibar", "jacuzzi", "lunch", "dinner",
+            "restaurant", "food", "reservation", "amenities", "pool", "view",
+            "guests", "person", "people", "night", "nights", "rate", "rates",
+            "modify", "change", "update", "deposit", "card", "cash", "reception",
+            "frontdesk", "service", "check_in", "check_out", "room_service", "free_wifi"
+        }
+
+        self.location_vocab = {
+            "bukit", "bintang", "kuala", "lumpur", "klcc", "petaling", "jaya",
+            "twin", "tower", "towers", "penang", "langkawi", "malaysia",
+            "selangor", "georgetown", "subang", "ttdi", "bangsar", "mont", "kiara",
+            "bukit_bintang", "kuala_lumpur", "petaling_jaya", "twin_towers"
+        }
+
+        self.hotel_vocab = {
+            "bookmate", "oriented", "resort", "standard", "deluxe", "family",
+            "ocean", "villa", "executive", "presidential"
+        }
+
+        self.brand_vocab = {
+            "agoda", "booking", "expedia", "trip", "hilton", "marriott",
+            "airbnb", "trivago", "klook", "grab", "traveloka"
         }
 
         # Build domain vocabulary from dataset for precision spell checking
         self.vocab = set()
+        self.vocab.update(self.domain_vocab)
+        self.vocab.update(self.location_vocab)
+        self.vocab.update(self.hotel_vocab)
+        self.vocab.update(self.brand_vocab)
+
         dataset_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "dataset", "intents.csv"))
         if os.path.exists(dataset_path):
             try:
@@ -81,20 +137,51 @@ class TextPreprocessor:
             except Exception:
                 pass
 
-        # Fallback core domain words
-        self.vocab.update({
-            "hello", "hi", "hey", "booking", "book", "room", "price", "cost",
-            "checkin", "checkout", "wifi", "parking", "breakfast", "contact",
-            "cancel", "deluxe", "suite", "location", "status", "payment",
-            "bookmate", "king", "queen", "minibar", "jacuzzi"
-        })
+        # Compound domain phrases (prevent splitting by punctuation/tokenization)
+        self.compound_phrases = {
+            r"\bcheck[ -]in\b": "check_in",
+            r"\bcheck[ -]out\b": "check_out",
+            r"\broom[ -]service\b": "room_service",
+            r"\bfree[ -]wifi\b": "free_wifi",
+            r"\bwi[ -]fi\b": "wifi",
+            r"\bair[ -]conditioning\b|\bair[ -]con\b": "air_conditioning",
+            r"\bswimming[ -]pool\b": "swimming_pool",
+            r"\bocean[ -]view\b": "ocean_view",
+            r"\btwin[ -]bed\b": "twin_bed",
+            r"\bdouble[ -]bed\b": "double_bed",
+            r"\bking[ -]bed\b": "king_bed",
+            r"\bqueen[ -]bed\b": "queen_bed",
+            r"\bfront[ -]desk\b": "front_desk",
+            r"\bsea[ -]view\b": "sea_view",
+            r"\bbukit[ -]bintang\b": "bukit_bintang",
+            r"\bkuala[ -]lumpur\b": "kuala_lumpur",
+            r"\bpetaling[ -]jaya\b": "petaling_jaya",
+            r"\btwin[ -]tower\b|\btwin[ -]towers\b": "twin_towers"
+        }
+
+        # Spoken number word normalization (e.g. "two guests" -> "2 guests")
+        self.number_words = {
+            r"\bone\b": "1",
+            r"\btwo\b": "2",
+            r"\bthree\b": "3",
+            r"\bfour\b": "4",
+            r"\bfive\b": "5",
+            r"\bsix\b": "6",
+            r"\bseven\b": "7",
+            r"\beight\b": "8",
+            r"\bnine\b": "9",
+            r"\bten\b": "10"
+        }
 
         # PII Regex Patterns (ordered by specificity)
         self.pii_patterns = [
-            ("CREDIT_CARD", r"\b(?:\d{4}[ -]?){3}\d{4}\b|\b(?:\d[ -]*?){13,19}\b"),
+            ("CREDIT_CARD", r"\b(?:\d[ -]*?){13,19}\b"),
             ("EMAIL", r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}"),
-            ("IC_ID", r"\b\d{6}-\d{2}-\d{4}\b|\b[A-Za-z]\d{7,8}\b"),
-            ("PHONE", r"\b(?:\+?\d{1,3}[-.\s]?)?\(?\d{2,4}\)?[-.\s]?\d{3,4}[-.\s]?\d{3,4}\b")
+            ("BOOKING_REFERENCE", r"\b(?:BK|BM|RES)[ -]?\d{4,8}\b"),
+            ("PASSPORT", r"\b[A-PR-WYa-pr-wy][0-9]{7,8}\b"),
+            ("IC_ID", r"\b\d{6}-\d{2}-\d{4}\b"),
+            ("PHONE", r"\b(?:\+?60|0)1[0-9][-.\s]?\d{3,4}[-.\s]?\d{3,4}\b|\b(?:\+?60|0)[3-9][-.\s]?\d{3,4}[-.\s]?\d{3,4}\b|\b(?:\+\d{1,3}[-.\s]?)?\(?\d{2,4}\)?[-.\s]?\d{3,4}[-.\s]?\d{3,4}\b"),
+            ("ADDRESS", r"\b(?:no\.?\s*\d+\s*,?\s*jalan\s+[a-zA-Z0-9\s]+|jalan\s+[a-zA-Z0-9\s]+|street|avenue|road|st\.?|rd\.?|lorong\s+[a-zA-Z0-9\s]+)\b")
         ]
 
     def _get_wordnet_pos(self, tag: str):
@@ -112,16 +199,16 @@ class TextPreprocessor:
 
     def _correct_word_spelling(self, word: str) -> str:
         """
-        Domain-aware spell checking:
-        1. Explicit common typo dictionary match.
-        2. Exact match in domain vocabulary -> keep word.
-        3. Short words (len <= 2) or numbers -> keep word.
-        4. Match nearest word in domain vocabulary by edit distance.
-        5. Fall back to TextBlob correction.
+        Domain-aware & Dictionary-based spell checking:
+        1. Explicit common typo dictionary match (`self.common_typos`).
+        2. Keep word if in domain vocabulary (`self.vocab`), short (len <= 2),
+           or valid English word in WordNet dictionary.
+        3. Strict edit-distance match (dist == 1) for unknown non-dictionary words against domain vocabulary.
+        4. No TextBlob fallback (prevents distorting out-of-vocabulary terms like 'lunch').
         """
         clean_word = word.strip(string.punctuation).lower()
 
-        if not clean_word or clean_word.isdigit():
+        if not clean_word or clean_word.isdigit() or "_" in clean_word:
             return word
 
         # 1. Check explicit typo dictionary
@@ -129,29 +216,31 @@ class TextPreprocessor:
             corrected = self.common_typos[clean_word]
             return word.lower().replace(clean_word, corrected)
 
-        # 2. Keep if already in domain vocabulary
+        # 2. Keep if already in domain vocabulary or short word
         if clean_word in self.vocab or len(clean_word) <= 2:
             return word
 
-        # 3. Edit distance match against domain vocabulary
-        candidates = []
-        for target in self.vocab:
-            if abs(len(clean_word) - len(target)) <= 2:
-                dist = edit_distance(clean_word, target)
-                if dist <= 2:
-                    candidates.append((dist, target))
-
-        if candidates:
-            candidates.sort(key=lambda x: (x[0], len(x[1])))
-            best_dist, best_match = candidates[0]
-            return word.lower().replace(clean_word, best_match)
-
-        # 4. TextBlob fallback
+        # 3. Keep if valid English word in WordNet dictionary
         try:
-            corrected = str(TextBlob(clean_word).correct())
-            return word.lower().replace(clean_word, corrected)
+            if wordnet.synsets(clean_word):
+                return word
         except Exception:
-            return word
+            pass
+
+        # 4. Strict edit distance match (distance == 1 only) against domain vocabulary
+        if len(clean_word) >= 4:
+            candidates = []
+            for target in self.vocab:
+                if abs(len(clean_word) - len(target)) <= 1:
+                    dist = edit_distance(clean_word, target)
+                    if dist == 1:
+                        candidates.append(target)
+
+            if len(candidates) == 1:
+                return word.lower().replace(clean_word, candidates[0])
+
+        # Return original word if no match (No TextBlob fallback)
+        return word
 
     def detect_and_mask_pii(self, text: str) -> tuple[str, dict]:
         """
@@ -165,9 +254,22 @@ class TextPreprocessor:
         detected_pii = {}
 
         for pii_type, pattern in self.pii_patterns:
-            matches = re.findall(pattern, masked_text)
+            matches = re.findall(pattern, masked_text, re.IGNORECASE)
             if matches:
-                filtered_matches = [m for m in matches if len(re.sub(r'\D', '', str(m))) >= 7 or pii_type != "PHONE"]
+                filtered_matches = []
+                for m in matches:
+                    m_str = str(m)
+                    if pii_type == "CREDIT_CARD":
+                        digits_only = re.sub(r'\D', '', m_str)
+                        if _is_luhn_valid(digits_only):
+                            filtered_matches.append(m_str)
+                    elif pii_type == "PHONE":
+                        digits_only = re.sub(r'\D', '', m_str)
+                        if len(digits_only) >= 8:
+                            filtered_matches.append(m_str)
+                    else:
+                        filtered_matches.append(m_str)
+
                 if filtered_matches:
                     detected_pii[pii_type] = filtered_matches
                     for m in filtered_matches:
@@ -179,40 +281,49 @@ class TextPreprocessor:
         """
         Text Normalization:
         - Lowercasing
+        - Compound Phrase & Spoken Number Normalization
         - Spelling Correction (Domain & Typo Aware)
-        - Basic Cleaning (removing extra punctuation/spaces)
+        - Basic Cleaning (removing extra punctuation/spaces while preserving compounds & PII)
         """
         # 1. Lowercasing
         text = text.lower()
 
-        # 2. Spelling Correction
+        # 2. Compound Phrase & Spoken Number Normalization
+        for pattern, replacement in self.compound_phrases.items():
+            text = re.sub(pattern, replacement, text, flags=re.IGNORECASE)
+
+        for pattern, replacement in self.number_words.items():
+            text = re.sub(pattern, replacement, text, flags=re.IGNORECASE)
+
+        # 3. Spelling Correction
         if self.enable_spell_check:
             words = text.split()
             corrected_words = []
             for w in words:
-                if w.startswith("[") and w.endswith("]"):
+                if (w.startswith("[") and w.endswith("]")) or "_" in w:
                     corrected_words.append(w)
                 else:
                     corrected_words.append(self._correct_word_spelling(w))
             text = " ".join(corrected_words)
 
-        # 3. Basic Cleaning (keep PII bracket tags intact)
+        # 4. Basic Cleaning (keep PII bracket tags intact)
         pii_tokens = re.findall(r"\[[A-Z_]+\]", text)
         for i, tag in enumerate(pii_tokens):
             text = text.replace(tag, f" PII_TOKEN_{i} ")
 
-        # Remove punctuation
-        text = re.sub(f"[{re.escape(string.punctuation)}]", " ", text)
+        # Remove punctuation except underscores (preserves check_in, room_service, etc.)
+        text = re.sub(r"[^\w\s_]", " ", text)
 
         # Restore PII tokens
         for i, tag in enumerate(pii_tokens):
             clean_tag_name = tag.strip("[]").lower()
-            text = text.replace(f" pii_token_{i} ", f" {clean_tag_name} ")
+            text = text.replace(f" PII_TOKEN_{i} ", f" {clean_tag_name} ")
 
         # Clean whitespace
         text = re.sub(r"\s+", " ", text).strip()
 
         return text
+
 
     def tokenize(self, text: str) -> list[str]:
         """Tokenize normalized text into a list of word tokens."""
@@ -284,15 +395,19 @@ def process_input(text: str) -> dict:
 
 if __name__ == "__main__":
     test_cases = [
-        "helo, I would like to book a room",
-        "bookin a room for 2 people",
-        "What is the prce of deluxe room?",
-        "My email is john.doe@gmail.com and phone is +60123456789."
+        "helo, I would like to book a room at BookMate near Bukit Bintang",
+        "I need a room with free wifi and room service for two guests",
+        "What is the check-in time and check out policy?",
+        "My email is john.doe@gmail.com, booking ID BK1234, and phone is +6012-3456789.",
+        "My card is 4532015112830366 (valid Luhn) and fake is 1234567890123456 (invalid Luhn)."
     ]
 
-    print("=== Testing Domain-Aware Spelling & NLP Preprocessing Pipeline ===")
+    print("=== Testing Domain-Aware Spelling & Enhanced NLP Preprocessing Pipeline ===")
     for text in test_cases:
         res = process_input(text)
         print(f"\n[Original]   : {res['original_text']}")
+        print(f"[PII Masked] : {res['pii_masked_text']}")
+        print(f"[Detected PII]: {res['detected_pii']}")
         print(f"[Normalized] : {res['normalized_text']}")
         print(f"[Lemmatized] : {res['preprocessed_text']}")
+
