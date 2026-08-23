@@ -82,7 +82,7 @@ class IntentPredictor:
     def __init__(
         self,
         model_name: str = "Support Vector Machine",
-        confidence_threshold: float = 0.55
+        confidence_threshold: float = 0.50
     ):
         """
         Initialize the SVM intent predictor.
