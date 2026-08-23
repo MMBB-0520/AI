@@ -206,11 +206,6 @@ if user_input:
 
             manager_intent = None
 
-            # Mark intent nicely during active booking wizard step
-            if confidence < CONFIDENCE_THRESHOLD:
-                intent = "book_hotel (wizard step)"
-                confidence = 1.0
-
         else:
 
             manager_intent = intent

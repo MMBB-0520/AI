@@ -17,19 +17,9 @@ responses = {
         "Sure! Which room type would you like to reserve?",
         "Let's make your reservation. May I know your preferred dates?"
     ],
-    "book_room": [
-        "I'd be happy to help you book a room. What are your check-in and check-out dates?",
-        "Sure! Which room type would you like to reserve?",
-        "Let's make your reservation. May I know your preferred dates?"
-    ],
 
     # 2. Cancel Hotel Reservation (Replacing cancel_booking)
     "cancel_hotel_reservation": [
-        "I'm sorry to hear that. Please provide your booking ID to cancel your reservation.",
-        "Sure! I can help you cancel your booking. May I have your booking number?",
-        "Please share your reservation ID so I can process your cancellation."
-    ],
-    "cancel_booking": [
         "I'm sorry to hear that. Please provide your booking ID to cancel your reservation.",
         "Sure! I can help you cancel your booking. May I have your booking number?",
         "Please share your reservation ID so I can process your cancellation."
@@ -41,19 +31,9 @@ responses = {
         "I'd be happy to update your booking. What would you like to change?",
         "Please tell me your booking details and the changes you would like to make."
     ],
-    "modify_booking": [
-        "Sure! Please provide your booking ID so I can help modify your reservation.",
-        "I'd be happy to update your booking. What would you like to change?",
-        "Please tell me your booking details and the changes you would like to make."
-    ],
 
     # 4. Check Hotel Reservation (Replacing booking_status)
     "check_hotel_reservation": [
-        "Please provide your booking ID so I can check your reservation status.",
-        "I'd be happy to help. What is your booking reference number?",
-        "Kindly provide your booking number for verification."
-    ],
-    "booking_status": [
         "Please provide your booking ID so I can check your reservation status.",
         "I'd be happy to help. What is your booking reference number?",
         "Kindly provide your booking number for verification."
@@ -66,20 +46,9 @@ responses = {
         "Which room type would you like to know the price for?",
         "Our room rates are:\n" + "\n".join(f"- {room}: {price}" for room, price in ROOM_PRICES.items())
     ],
-    "room_price": [
-        "Our Standard Room starts from RM180 per night.",
-        "Our room rates range from RM180 to RM780 per night depending on the room type.",
-        "Which room type would you like to know the price for?",
-        "Our room rates are:\n" + "\n".join(f"- {room}: {price}" for room, price in ROOM_PRICES.items())
-    ],
 
     # 6. Check Hotel Facilities (Replacing hotel_facilities)
     "check_hotel_facilities": [
-        f"Our resort offers: {', '.join(FACILITIES)}.",
-        "Guests can enjoy our swimming pool, fitness centre, spa, and beach access.",
-        "We provide top facilities including free WiFi, outdoor pool, spa and restaurant."
-    ],
-    "hotel_facilities": [
         f"Our resort offers: {', '.join(FACILITIES)}.",
         "Guests can enjoy our swimming pool, fitness centre, spa, and beach access.",
         "We provide top facilities including free WiFi, outdoor pool, spa and restaurant."
@@ -116,11 +85,6 @@ responses = {
         "Yes! We provide complimentary parking throughout your stay.",
         f"Parking is free and available 24 hours. {PARKING}"
     ],
-    "parking": [
-        "Free parking is available for all hotel guests.",
-        "Yes! We provide complimentary parking throughout your stay.",
-        f"Parking is free and available 24 hours. {PARKING}"
-    ],
 
     # 11. Bring Pets
     "bring_pets": [
@@ -133,11 +97,6 @@ responses = {
         f"Breakfast is served daily from {BREAKFAST_TIME}. We offer buffet breakfast, room service, and dinner menus.",
         "Breakfast is included for Deluxe Room, Family Suite and Ocean Villa.",
         "Our restaurant serves local and international dining options all day."
-    ],
-    "breakfast": [
-        f"Breakfast is served daily from {BREAKFAST_TIME}.",
-        "Breakfast is included for Deluxe Room, Family Suite and Ocean Villa.",
-        "Standard Room guests can add breakfast for RM30 per person."
     ],
 
     # 13. Invoices
@@ -264,4 +223,4 @@ def get_response(intent, entities=None):
             intent,
             ["I'm sorry, I didn't understand your question. Could you please rephrase it?"]
         )
-    )
+    )
