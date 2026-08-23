@@ -1,54 +1,83 @@
 """
-BookMate Chatbot
-Intent Prediction Module
+BookMate Hotel Booking Chatbot
+================================
+
+Intent Classification Module
 
 Purpose:
-Load trained ML models and predict user intent using
-the BookMate NLP preprocessing pipeline.
+    Load the trained SVM intent classification model and
+    predict the user's intent.
 
-Supported Models:
+Machine Learning Pipeline:
+    User Input
+        ↓
+    NLP Preprocessing
+        ↓
+    TF-IDF Vectorization
+        ↓
+    SVM Classifier
+        ↓
+    Intent Prediction
+        ↓
+    Confidence Check
 
-* Support Vector Machine
-* Naive Bayes
-* Logistic Regression
-  """
+Supported Dataset:
+    Bitext Hospitality LLM Chatbot Training Dataset
+
+Number of intents:
+    25
+"""
 
 import os
 import sys
 import joblib
 
-# IMPORT PREPROCESSOR
-# Ensure project root is available for imports
-
+# PROJECT PATH
 PROJECT_ROOT = os.path.abspath(
-os.path.join(os.path.dirname(__file__), "..")
+    os.path.join(os.path.dirname(__file__), "..")
 )
 
 if PROJECT_ROOT not in sys.path:
-    sys.path.append(PROJECT_ROOT)
+    sys.path.insert(0, PROJECT_ROOT)
 
+# IMPORT PREPROCESSING
 from chatbot.preprocessing import preprocess_text
 
-# PATH CONFIGURATION
+# MODEL PATHS
 MODEL_DIR = os.path.join(
-PROJECT_ROOT,
-"models"
+    PROJECT_ROOT,
+    "models"
+)
+
+MODEL_PATH = os.path.join(
+    MODEL_DIR,
+    "svm.pkl"
+)
+
+VECTORIZER_PATH = os.path.join(
+    MODEL_DIR,
+    "svm_vectorizer.pkl"
+)
+
+LABEL_ENCODER_PATH = os.path.join(
+    MODEL_DIR,
+    "svm_label_encoder.pkl"
 )
 
 # INTENT PREDICTOR
 class IntentPredictor:
     """
-    Predict user intent using a trained ML model.
-    
-    The predictor does NOT train models.
-    It only loads existing trained models and performs inference.
-    """
+    Predict user intent using the trained SVM model.
 
-    SUPPORTED_MODELS = {
-        "Support Vector Machine": "svm",
-        "Naive Bayes": "nb",
-        "Logistic Regression": "lr"
-    }
+    This class performs inference only.
+    It does not train the model.
+
+    Components:
+        - SVM classifier
+        - TF-IDF vectorizer
+        - Label encoder
+        - NLP preprocessing pipeline
+    """
 
     def __init__(
         self,
@@ -56,120 +85,105 @@ class IntentPredictor:
         confidence_threshold: float = 0.55
     ):
         """
-        Initialize IntentPredictor.
+        Initialize the SVM intent predictor.
 
         Args:
             model_name:
                 Name of the trained model to use.
-
             confidence_threshold:
-                Minimum confidence required to accept
+                Minimum confidence required for accepting
                 the predicted intent.
         """
 
-        if model_name not in self.SUPPORTED_MODELS:
-            raise ValueError(
-                f"Unknown model name: {model_name}. "
-                f"Supported models: "
-                f"{list(self.SUPPORTED_MODELS.keys())}"
-            )
-
-        self.model_name = model_name
         self.confidence_threshold = confidence_threshold
 
-        model_prefix = self.SUPPORTED_MODELS[
-            model_name
-        ]
-
-        # Build model file paths
-        model_path = os.path.join(
-            MODEL_DIR,
-            f"{model_prefix}.pkl"
-        )
-
-        vectorizer_path = os.path.join(
-            MODEL_DIR,
-            f"{model_prefix}_vectorizer.pkl"
-        )
-
-        label_encoder_path = os.path.join(
-            MODEL_DIR,
-            f"{model_prefix}_label_encoder.pkl"
-        )
-
-        # Check files before loading
+        # Check required model files
         required_files = {
-            "model": model_path,
-            "vectorizer": vectorizer_path,
-            "label_encoder": label_encoder_path
+            "SVM model": MODEL_PATH,
+            "TF-IDF vectorizer": VECTORIZER_PATH,
+            "Label encoder": LABEL_ENCODER_PATH
         }
 
         missing_files = [
-            path
-            for path in required_files.values()
+            f"{name}: {path}"
+            for name, path in required_files.items()
             if not os.path.exists(path)
         ]
 
         if missing_files:
             raise FileNotFoundError(
-                "Required model files are missing:\n"
+                "Required trained model files are missing:\n"
                 + "\n".join(missing_files)
+                + "\n\n"
+                "Please run:\n"
+                "python -m train.train_svm"
             )
 
         # Load trained components
+        print("Loading SVM intent classification model...")
+
         self.model = joblib.load(
-            model_path
+            MODEL_PATH
         )
 
         self.vectorizer = joblib.load(
-            vectorizer_path
+            VECTORIZER_PATH
         )
 
         self.label_encoder = joblib.load(
-            label_encoder_path
+            LABEL_ENCODER_PATH
         )
 
-    # PREPROCESS
+        print("SVM model loaded successfully.")
+
+        # Display model information
+        self.intents = list(
+            self.label_encoder.classes_
+        )
+
+    # TEXT PREPARATION
     def _prepare_text(
         self,
         user_message: str,
         preprocessed_text: str | None = None
     ) -> str:
         """
-        Prepare input text.
+        Prepare user input for the trained SVM model.
 
-        If preprocessed_text is provided, use it directly.
-        Otherwise run the standard preprocessing pipeline.
+        If preprocessed_text is supplied, it is used directly.
+        Otherwise, the standard preprocessing pipeline is run.
         """
 
         if preprocessed_text is not None:
             return preprocessed_text
 
-        if not user_message or not user_message.strip():
+        if not user_message:
+            return ""
+
+        if not user_message.strip():
             return ""
 
         return preprocess_text(
             user_message
         )
 
-    # CONFIDENCE
+    # CONFIDENCE CALCULATION
     def _get_confidence(
         self,
         text_vector
     ) -> float:
         """
-        Calculate prediction confidence.
+        Calculate the confidence score of the SVM prediction.
 
-        Priority:
-        1. predict_proba()
-        2. decision_function()
-        3. fallback 0.0
+        The SVM was trained with probability=True, therefore
+        predict_proba() is used when available.
 
         Note:
-        decision_function scores are not true probabilities.
+            This value is treated as a confidence score,
+            not as a guaranteed real-world probability.
         """
 
-        # Models supporting probability prediction
+        # Preferred method: predict_proba()
         if hasattr(
             self.model,
             "predict_proba"
@@ -182,40 +196,32 @@ class IntentPredictor:
                 probabilities.max()
             )
 
-        # SVM models may expose decision_function()
+        # Fallback: decision_function()
         if hasattr(
             self.model,
             "decision_function"
         ):
+            import numpy as np
+
             scores = self.model.decision_function(
                 text_vector
             )
 
+            scores = np.asarray(scores)
+
             # Binary classification
-            if getattr(
-                scores,
-                "ndim",
-                1
-            ) == 1:
+            if scores.ndim == 1:
+                score = abs(float(scores[0]))
 
-                # Convert decision score into
-                # a rough 0-1 confidence.
-                import numpy as np
-
-                confidence = 1 / (
-                    1 + np.exp(-abs(float(scores[0])))
+                confidence = 1.0 / (
+                    1.0 + np.exp(-score)
                 )
 
                 return float(confidence)
 
             # Multiclass classification
-            import numpy as np
+            scores = scores[0]
 
-            scores = np.asarray(
-                scores[0]
-            )
-
-            # Softmax-like normalization
             exp_scores = np.exp(
                 scores - np.max(scores)
             )
@@ -229,28 +235,28 @@ class IntentPredictor:
                 probabilities.max()
             )
 
-        # Unknown confidence
         return 0.0
 
-    # PREDICT
+    # MAIN PREDICTION
     def predict(
         self,
         user_message: str,
         preprocessed_text: str | None = None
     ) -> dict:
         """
-        Predict user intent.
+        Predict the user's intent.
 
         Returns:
-
-        {
-            "intent": "book_room",
-            "confidence": 0.87,
-            "status": "confident",
-            "cleaned_text": "want book deluxe room"
-        }
+            {
+                "intent": "book_hotel",
+                "predicted_intent": "book_hotel",
+                "confidence": 0.95,
+                "status": "confident",
+                "cleaned_text": "want book hotel"
+            }
         """
 
+        # Prepare input
         cleaned_text = self._prepare_text(
             user_message,
             preprocessed_text
@@ -261,22 +267,88 @@ class IntentPredictor:
 
             return {
                 "intent": "unknown",
+                "predicted_intent": None,
                 "confidence": 0.0,
                 "status": "empty_input",
                 "cleaned_text": ""
             }
 
-        # Vectorize
+        # Rule-Based Check for Social & Conversational Expressions
+        raw_lower = user_message.strip().lower() if user_message else ""
+        clean_words = set(cleaned_text.split())
+
+        greetings = {"hello", "hi", "hey", "hallo", "helo", "greetings", "good morning", "good afternoon", "good evening"}
+        goodbyes = {"bye", "goodbye", "see you", "bye bye", "cya"}
+        thanks = {"thank you", "thanks", "thx", "thanku", "thanks a lot", "many thanks"}
+
+        if raw_lower in greetings or cleaned_text in greetings or (len(clean_words) == 1 and clean_words.issubset(greetings)):
+            return {
+                "intent": "greeting",
+                "predicted_intent": "greeting",
+                "confidence": 1.00,
+                "status": "confident",
+                "cleaned_text": cleaned_text
+            }
+
+        if raw_lower in goodbyes or cleaned_text in goodbyes or (len(clean_words) == 1 and clean_words.issubset(goodbyes)):
+            return {
+                "intent": "goodbye",
+                "predicted_intent": "goodbye",
+                "confidence": 1.00,
+                "status": "confident",
+                "cleaned_text": cleaned_text
+            }
+
+        if raw_lower in thanks or cleaned_text in thanks or "thank" in cleaned_text or "thanks" in cleaned_text:
+            return {
+                "intent": "customer_service",
+                "predicted_intent": "customer_service",
+                "confidence": 1.00,
+                "status": "confident",
+                "cleaned_text": cleaned_text
+            }
+
+        # Domain Keyword Heuristic Rules (Fallback for high-precision keywords)
+        if "parking" in raw_lower or "park" in clean_words:
+            return {
+                "intent": "book_parking_space",
+                "predicted_intent": "book_parking_space",
+                "confidence": 0.95,
+                "status": "confident",
+                "cleaned_text": cleaned_text
+            }
+
+        facility_keywords = {"pool", "swimming", "gym", "spa", "wifi", "playground", "facility", "facilities"}
+        if clean_words.intersection(facility_keywords) or any(k in raw_lower for k in ["swimming pool", "free wifi", "beach access"]):
+            return {
+                "intent": "check_hotel_facilities",
+                "predicted_intent": "check_hotel_facilities",
+                "confidence": 0.95,
+                "status": "confident",
+                "cleaned_text": cleaned_text
+            }
+
+        menu_keywords = {"breakfast", "menu", "dinner", "lunch", "restaurant", "food", "dining"}
+        if clean_words.intersection(menu_keywords):
+            return {
+                "intent": "check_menu",
+                "predicted_intent": "check_menu",
+                "confidence": 0.95,
+                "status": "confident",
+                "cleaned_text": cleaned_text
+            }
+
+        # TF-IDF transformation
         text_vector = self.vectorizer.transform(
             [cleaned_text]
         )
 
-        # Predict encoded intent
+        # SVM prediction
         prediction = self.model.predict(
             text_vector
         )
 
-        # Convert encoded label back to intent name
+        # Convert numerical label → intent name
         intent = self.label_encoder.inverse_transform(
             prediction
         )[0]
@@ -297,6 +369,7 @@ class IntentPredictor:
                 "cleaned_text": cleaned_text
             }
 
+        # Confident prediction
         return {
             "intent": intent,
             "predicted_intent": intent,
@@ -313,9 +386,9 @@ class IntentPredictor:
         top_k: int = 3
     ) -> dict:
         """
-        Return the top predicted intents.
+        Return the top-k predicted intents.
 
-        Mainly useful for debugging and model evaluation.
+        Useful for debugging and model analysis.
         """
 
         cleaned_text = self._prepare_text(
@@ -332,11 +405,12 @@ class IntentPredictor:
                 "cleaned_text": ""
             }
 
+        # Vectorize
         text_vector = self.vectorizer.transform(
             [cleaned_text]
         )
 
-        # Probability-based models
+        # Probability-based prediction
         if hasattr(
             self.model,
             "predict_proba"
@@ -348,9 +422,9 @@ class IntentPredictor:
 
             classes = self.model.classes_
 
-            ranked_indices = probabilities.argsort()[
-                ::-1
-            ][:top_k]
+            ranked_indices = probabilities.argsort()[::-1]
+
+            ranked_indices = ranked_indices[:top_k]
 
             top_predictions = []
 
@@ -373,8 +447,6 @@ class IntentPredictor:
 
         else:
 
-            # For SVM models without probability support,
-            # return the main prediction only.
             prediction = self.model.predict(
                 text_vector
             )
@@ -387,11 +459,14 @@ class IntentPredictor:
                 text_vector
             )
 
-            top_predictions = [{
-                "intent": intent,
-                "confidence": confidence
-            }]
+            top_predictions = [
+                {
+                    "intent": intent,
+                    "confidence": confidence
+                }
+            ]
 
+        # Final intent
         best = top_predictions[0]
 
         if (
@@ -409,108 +484,133 @@ class IntentPredictor:
             "cleaned_text": cleaned_text
         }
 
-# CONVENIENCE FUNCTION
+
+# DEFAULT PREDICTOR
 _default_predictor = None
 
 
 def predict_intent(
-    text: str,
-    model_name: str = "Support Vector Machine"
+    text: str
 ) -> dict:
     """
     Convenience function for intent prediction.
+
+    Example:
+        result = predict_intent(
+            "I want to book a hotel"
+        )
     """
 
     global _default_predictor
 
-    if (
-        _default_predictor is None
-        or _default_predictor.model_name != model_name
-    ):
-        _default_predictor = IntentPredictor(
-            model_name=model_name
-        )
+    if _default_predictor is None:
+
+        _default_predictor = IntentPredictor()
 
     return _default_predictor.predict(
         text
     )
 
-
 # TEST
 if __name__ == "__main__":
-    print(
-        "=== BookMate Intent Predictor Test ==="
-    )
+
+    print()
+    print("=" * 60)
+    print("BookMate SVM Intent Predictor Test")
+    print("=" * 60)
 
     test_queries = [
-        "I want to book a deluxe room for 2 nights please",
-        "What time is check in and check out?",
-        "Do you have free parking available?",
-        "How much is a single room per night?",
-        "Can I cancel my reservation?",
-        "Where is the resort located?",
-        "Do you have breakfast?",
-        "Thank you goodbye"
+
+        "I want to book a hotel for two nights",
+
+        "Can I cancel my hotel reservation?",
+
+        "I need to change my reservation",
+
+        "What time is check in?",
+
+        "What time is check out?",
+
+        "How much does a hotel room cost?",
+
+        "Do you have free parking?",
+
+        "Can I bring my pet?",
+
+        "Do you have a swimming pool?",
+
+        "Where can I find my booking?",
+
+        "I want to complain about my stay",
+
+        "I need to speak to a human",
+
+        "Do you provide shuttle service?",
+
+        "Can I store my luggage?",
+
+        "Where can I find my invoices?"
     ]
 
-    model_names = [
-        "Support Vector Machine",
-        "Naive Bayes",
-        "Logistic Regression"
-    ]
+    try:
 
-    for model_name in model_names:
+        predictor = IntentPredictor()
 
-        print(
-            f"\n{'=' * 60}"
-        )
+        print()
+        print("Available intents:")
+        print("-" * 60)
 
-        print(
-            f"Model: {model_name}"
-        )
+        for intent in predictor.intents:
+            print(f"  - {intent}")
 
-        print(
-            f"{'=' * 60}"
-        )
+        print()
+        print("=" * 60)
+        print("Prediction Tests")
+        print("=" * 60)
 
-        try:
+        for query in test_queries:
 
-            predictor = IntentPredictor(
-                model_name=model_name
+            result = predictor.predict(
+                query
             )
 
-            for query in test_queries:
+            print()
+            print(f"User       : {query}")
+            print(
+                f"Intent     : {result['intent']}"
+            )
+            print(
+                f"Confidence : "
+                f"{result['confidence']:.2%}"
+            )
+            print(
+                f"Status     : {result['status']}"
+            )
+            print(
+                f"Cleaned    : "
+                f"{result['cleaned_text']}"
+            )
 
-                result = predictor.predict(
-                    query
-                )
+            # Show top predictions
+            top_result = predictor.predict_top(
+                query,
+                top_k=3
+            )
+
+            print("Top predictions:")
+
+            for item in top_result["top_predictions"]:
 
                 print(
-                    f"\nQuery: {query}"
+                    f"   {item['intent']}: "
+                    f"{item['confidence']:.2%}"
                 )
 
-                print(
-                    f"Intent: "
-                    f"{result['intent']}"
-                )
+    except Exception as e:
 
-                print(
-                    f"Confidence: "
-                    f"{result['confidence']:.2%}"
-                )
+        print()
+        print("ERROR:")
+        print(e)
 
-                print(
-                    f"Status: "
-                    f"{result['status']}"
-                )
-
-                print(
-                    f"Cleaned: "
-                    f"{result['cleaned_text']}"
-                )
-
-        except Exception as e:
-            print(f"Error loading {model_name}: {e}")
-            import traceback
-            traceback.print_exc()
-
+        import traceback
+        traceback.print_exc()

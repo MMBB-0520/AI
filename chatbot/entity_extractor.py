@@ -151,14 +151,20 @@ class EntityExtractor:
     # GUESTS
     def extract_guests(self, text: str) -> int | None:
         """
-        Extract total number of guests.
+        Extract number of guests.
 
-        Examples:
+        Supported examples:
             "2 guests" -> 2
             "3 people" -> 3
             "4 pax" -> 4
             "2 adults" -> 2
-            "for 5" -> 5
+            "for 5 people" -> 5
+            "for 2 adults" -> 2
+
+        Avoids interpreting:
+            "for 3 nights"
+            "for 2 rooms"
+        as guest count.
         """
 
         if not text:
@@ -166,42 +172,45 @@ class EntityExtractor:
 
         text_lower = text.lower()
 
-        # Numeric guest expressions
-        match = re.search(
+        # 1. Explicit guest expressions
+        numeric_match = re.search(
             r"\b(\d+)\s*"
-            r"(?:people|person|guest|guests|pax|adult|adults)\b",
+            r"(?:people|person|guests?|pax|adults?)\b",
             text_lower
         )
 
-        if match:
-            return int(match.group(1))
+        if numeric_match:
+            return int(numeric_match.group(1))
 
-        # Word-number guest expressions
+        # 2. Word-number guest expressions
         for word, number in self.word_to_num.items():
+
             pattern = (
                 r"\b"
                 + word
                 + r"\s+"
-                r"(?:people|person|guest|guests|pax|adult|adults)\b"
+                r"(?:people|person|guests?|pax|adults?)\b"
             )
 
             if re.search(pattern, text_lower):
                 return number
 
-        # Booking context:
-        # "room for 4"
-        # "booking for 2"
-        match = re.search(
-            r"\b(?:for|with)\s+(\d+)\s*"
-            r"(?:people|person|guest|guests|pax)?\b",
+        # 3. "for N" booking context
+
+        # Only accept if N is NOT followed by:
+        # nights / rooms / days
+        numeric_for_match = re.search(
+            r"\b(?:for|with)\s+(\d+)"
+            r"(?!\s*(?:night|nights|room|rooms|day|days))"
+            r"(?:\s*(?:people|person|guests?|pax|adults?))?\b",
             text_lower
         )
 
-        if match:
-            return int(match.group(1))
+        if numeric_for_match:
+            return int(numeric_for_match.group(1))
 
         return None
-
+        
     # NIGHTS
     def extract_nights(self, text: str) -> int | None:
         """

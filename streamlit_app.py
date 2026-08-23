@@ -206,6 +206,11 @@ if user_input:
 
             manager_intent = None
 
+            # Mark intent nicely during active booking wizard step
+            if confidence < CONFIDENCE_THRESHOLD:
+                intent = "book_hotel (wizard step)"
+                confidence = 1.0
+
         else:
 
             manager_intent = intent
@@ -222,7 +227,7 @@ if user_input:
         # Dialogue Manager returns None when the message is not related to a booking workflow.
         if bot_reply is None:
 
-            bot_reply = get_response(intent)
+            bot_reply = get_response(intent, entities=extracted_entities)
 
     # 9. SAVE PREDICTION INFORMATION
     prediction_info = {

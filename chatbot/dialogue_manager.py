@@ -64,13 +64,21 @@ class DialogueManager:
             "action": None,
             "step": 0,
 
+            # Booking information
+            "booking_id": None,
             "name": None,
+
+            "room": None,
+            "rooms": None,
+            "guests": None,
+
             "checkin": None,
             "checkout": None,
-            "guests": None,
-            "room": None,
+            "nights": None,
 
-            "booking_id": None
+            # Contact information
+            "email": None,
+            "phone": None
         }
 
     def reset(self):
@@ -255,6 +263,26 @@ class DialogueManager:
 
             return False, error
 
+        if entity_name == "rooms":
+            self.state["rooms"] = value
+            return True, None
+
+        if entity_name == "nights":
+            self.state["nights"] = value
+            return True, None
+
+        if entity_name == "email":
+            self.state["email"] = value
+            return True, None
+
+        if entity_name == "phone":
+            self.state["phone"] = value
+            return True, None
+
+        if entity_name == "booking_id":
+            self.state["booking_id"] = value
+            return True, None
+
         return True, None
 
     # APPLY ALL EXTRACTED BOOKING ENTITIES
@@ -270,11 +298,16 @@ class DialogueManager:
         # Order matters:
         # check-in should be processed before check-out.
         ordered_entities = [
+            "booking_id",
             "name",
             "check_in",
             "check_out",
+            "nights",
             "guests",
-            "room_type"
+            "rooms",
+            "room_type",
+            "email",
+            "phone"
         ]
 
         for key in ordered_entities:
@@ -297,7 +330,6 @@ class DialogueManager:
     # NEXT BOOKING QUESTION
     def _get_missing_booking_field(self):
         """Return the first missing booking field."""
-
         if not self.state.get("name"):
             return "name"
 
@@ -404,73 +436,120 @@ class DialogueManager:
         """
         Continue an existing booking conversation.
 
-        Example:
+        Important:
+        During an active booking wizard, the current step has priority
+        over the generic entity extraction result.
 
-        Bot:
-        May I have your name?
-
-        User:
-        John
-
-        Bot:
-        What is your check-in date?
-
-        User:
-        2026-10-01
+        This prevents a single date such as "2026-10-05" from being
+        incorrectly interpreted as check-in when the chatbot is actually
+        asking for check-out.
         """
 
-        # First try extracted entities.
-        error = self._update_booking_state(entities)
-
-        if error:
-            return error
-
-        # If entity extraction did not understand the answer,
-        # use current step as a fallback.
         step = self.state.get("step")
 
+        # STEP 1: NAME
         if step == 1 and not self.state.get("name"):
-            valid, value, error = validate_name(user_input)
+
+            value = entities.get("name")
+
+            if value is not None:
+                valid, cleaned, error = validate_name(value)
+            else:
+                valid, cleaned, error = validate_name(user_input)
 
             if not valid:
                 return error
 
-            self.state["name"] = value
+            self.state["name"] = cleaned
 
-        elif step == 2 and not self.state.get("checkin"):
-            valid, value, error = validate_checkin_date(user_input)
+            return self._ask_next_booking_question()
+
+        # STEP 2: CHECK-IN
+        if step == 2 and not self.state.get("checkin"):
+
+            value = entities.get("check_in")
+
+            if value is not None:
+                valid, cleaned, error = validate_checkin_date(value)
+            else:
+                valid, cleaned, error = validate_checkin_date(user_input)
 
             if not valid:
                 return error
 
-            self.state["checkin"] = value
+            self.state["checkin"] = cleaned
 
-        elif step == 3 and not self.state.get("checkout"):
-            valid, value, error = validate_checkout_date(
+            return self._ask_next_booking_question()
+
+        # STEP 3: CHECK-OUT
+        if step == 3 and not self.state.get("checkout"):
+
+            # IMPORTANT:
+            # Do NOT use entities["check_in"] here.
+            #
+            # EntityExtractor sees a standalone date as check_in.
+            # But in this dialogue step, that date is actually check-out.
+
+            value = entities.get("check_out")
+
+            if value is not None:
+                checkout_value = value
+            else:
+                # If user supplied a standalone date, validate the
+                # original user input as the checkout date.
+                checkout_value = user_input.strip()
+
+            valid, cleaned, error = validate_checkout_date(
                 self.state["checkin"],
-                user_input
+                checkout_value
             )
 
             if not valid:
                 return error
 
-            self.state["checkout"] = value
+            self.state["checkout"] = cleaned
 
-        elif step == 4 and not self.state.get("guests"):
-            valid, value, error = validate_guests(user_input)
+            return self._ask_next_booking_question()
+
+        # STEP 4: GUESTS
+        if step == 4 and not self.state.get("guests"):
+
+            value = entities.get("guests")
+
+            if value is not None:
+                valid, cleaned, error = validate_guests(value)
+            else:
+                valid, cleaned, error = validate_guests(user_input)
 
             if not valid:
                 return error
 
-            self.state["guests"] = value
+            self.state["guests"] = cleaned
 
-        elif step == 5 and not self.state.get("room"):
-            valid, value, error = validate_room_type(user_input)
+            return self._ask_next_booking_question()
+
+        # STEP 5: ROOM
+        if step == 5 and not self.state.get("room"):
+
+            value = entities.get("room_type")
+
+            if value is not None:
+                valid, cleaned, error = validate_room_type(value)
+            else:
+                valid, cleaned, error = validate_room_type(user_input)
 
             if not valid:
                 return error
 
-            self.state["room"] = value
+            self.state["room"] = cleaned
+
+            return self._ask_next_booking_question()
+
+        # FALLBACK
+        error = self._update_booking_state(entities)
+
+        if error:
+            return error
 
         return self._ask_next_booking_question()
 
@@ -611,7 +690,7 @@ class DialogueManager:
             return "Please provide a valid Booking ID, for example **BK1234**."
 
         # CANCEL BOOKING
-        if intent == "cancel_booking":
+        if intent == "cancel_hotel_reservation":
 
             if booking_id:
                 return self._handle_booking_id_action(
@@ -628,7 +707,7 @@ class DialogueManager:
             )
 
         # BOOKING STATUS
-        if intent == "booking_status":
+        if intent == "check_hotel_reservation":
 
             if booking_id:
                 return self._handle_booking_id_action(
@@ -645,7 +724,7 @@ class DialogueManager:
             )
 
         # MODIFY BOOKING
-        if intent == "modify_booking":
+        if intent == "change_hotel_reservation":
 
             if booking_id:
                 return self._handle_booking_id_action(
@@ -662,7 +741,7 @@ class DialogueManager:
             )
 
         # NEW BOOKING
-        if intent == "book_room":
+        if intent == "book_hotel":
 
             if not self.state["active"]:
 
@@ -721,7 +800,7 @@ if __name__ == "__main__":
 
 
     conversation = [
-        ("I want to book a deluxe room for 2 guests", "book_room"),
+        ("I want to book a deluxe room for 2 guests", "book_hotel"),
         ("My name is John Doe", None),
         ("2026-10-01", None),
         ("2026-10-05", None),
