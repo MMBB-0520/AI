@@ -2,11 +2,16 @@ import streamlit as st
 import random
 import json
 import os
+import importlib
+import chatbot.response
+import chatbot.booking
 
+importlib.reload(chatbot.response)
+importlib.reload(chatbot.booking)
 from chatbot.predictor import IntentPredictor
 from chatbot.response import get_response
 from chatbot.hotel_info import HOTEL_NAME
-from chatbot.booking import process_booking
+from chatbot.booking import process_booking, search_booking, cancel_reservation
 from chatbot.preprocessing import process_input
 
 # Minimum confidence threshold for intent classification
@@ -97,6 +102,9 @@ if "booking" not in st.session_state:
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
+if "pending_intent" not in st.session_state:
+    st.session_state.pending_intent = None
+
 # Display message history
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
@@ -142,24 +150,55 @@ if user_input:
             "detected_pii": nlp_details["detected_pii"]
         }
 
-        # Fallback handling for low confidence predictions
-        if confidence < CONFIDENCE_THRESHOLD:
-            bot_reply = (
-                "Sorry, I didn't quite understand that. "
-                "Could you please rephrase your request? "
-                "You can ask about room booking, prices, facilities, or check-in/out times!"
-            )
-        else:
-            booking_reply = process_booking(
-                booking,
-                user_input,
-                intent
-            )
-
-            if booking_reply is not None:
-                bot_reply = booking_reply
+        # Multi-turn Context Memory handling
+        if st.session_state.pending_intent == "cancel_booking":
+            cancel_res = cancel_reservation(user_input)
+            if cancel_res is not None:
+                bot_reply = cancel_res
+                prediction_info["intent"] = "cancel_booking"
+                prediction_info["confidence"] = 1.0
+                st.session_state.pending_intent = None
             else:
-                bot_reply = get_response(intent)
+                direct_search = search_booking(user_input)
+                if direct_search is not None:
+                    bot_reply = direct_search
+                    prediction_info["intent"] = "booking_status"
+                    prediction_info["confidence"] = 1.0
+                    st.session_state.pending_intent = None
+                elif confidence < CONFIDENCE_THRESHOLD:
+                    bot_reply = "Sorry, I couldn't find a booking for that name or ID. Please check your details!"
+                else:
+                    bot_reply = get_response(intent)
+                    st.session_state.pending_intent = None
+        else:
+            # 1. Direct Search Check (Booking ID, Guest Name, or Email)
+            direct_search = search_booking(user_input)
+            if direct_search is not None:
+                bot_reply = direct_search
+                prediction_info["intent"] = "booking_status"
+                prediction_info["confidence"] = 1.0
+                st.session_state.pending_intent = None
+            # 2. Fallback handling for low confidence predictions
+            elif confidence < CONFIDENCE_THRESHOLD:
+                bot_reply = (
+                    "Sorry, I didn't quite understand that. "
+                    "Could you please rephrase your request? "
+                    "You can ask about room booking, prices, facilities, or check-in/out times!"
+                )
+            else:
+                booking_reply = process_booking(
+                    booking,
+                    user_input,
+                    intent
+                )
+
+                if booking_reply is not None:
+                    bot_reply = booking_reply
+                    st.session_state.pending_intent = None
+                else:
+                    bot_reply = get_response(intent)
+                    if intent in ["cancel_booking", "modify_booking", "booking_status"]:
+                        st.session_state.pending_intent = intent
 
     # Append assistant reply
     msg_obj = {

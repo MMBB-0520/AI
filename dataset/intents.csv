@@ -7,14 +7,6 @@ Good evening,greeting
 Hey BookMate,greeting
 Greetings,greeting
 Is anyone online?,greeting
-Can someone help me?,greeting
-I need assistance,greeting
-Nice to meet you,greeting
-Hello there,greeting
-Hi BookMate chatbot,greeting
-Good day,greeting
-Morning BookMate,greeting
-Evening BookMate,greeting
 "Hi, I have a question",greeting
 "Hello, can I ask something?",greeting
 "Hey, need help with hotel",greeting
@@ -24,20 +16,266 @@ Good day BookMate,greeting
 "Hi, are you active?",greeting
 Hey there chatbot,greeting
 "Hello, I want to inquire about resort",greeting
-what can you do?,greeting
-what can u do?,greeting
-what can you do for me?,greeting
-what services do you offer?,greeting
-what features do you have?,greeting
-how can you help me?,greeting
-help me,greeting
-what are your capabilities?,greeting
-what options do you have?,greeting
-show me what you can do,greeting
-how to use this chatbot?,greeting
-help,greeting
-what can i ask you?,greeting
-what services are supported?,greeting
+what can you do?,help
+what can u do?,help
+what can you do for me?,help
+what services do you offer?,help
+what features do you have?,help
+how can you help me?,help
+help me,help
+what are your capabilities?,help
+what options do you have?,help
+show me what you can do,help
+how to use this chatbot?,help
+help,help
+what can i ask you?,help
+what services are supported?,help
+how can you assist me?,help
+what can bookmate do?,help
+list your services,help
+what can you help me with?,help
+i want booking,book_room
+i want to book,book_room
+i want to book a room,book_room
+book a room,book_room
+book room,book_room
+how to book?,book_room
+how to book a room?,book_room
+make a booking,book_room
+make a reservation,book_room
+reserve a room,book_room
+can I book a room?,book_room
+I'd like to book a room,book_room
+want to reserve a room,book_room
+I need to book a room,book_room
+room reservation,book_room
+book now,book_room
+I want a room,book_room
+book a stay,book_room
+reserve room,book_room
+new booking,book_room
+start booking,book_room
+I would like to make a booking,book_room
+how do I make a reservation?,book_room
+what is your resort facilities,hotel_facilities
+what are your resort facilities,hotel_facilities
+resort facilities,hotel_facilities
+hotel facilities,hotel_facilities
+what facilities do you have?,hotel_facilities
+what facilities are available?,hotel_facilities
+facilities,hotel_facilities
+what amenities do you offer?,hotel_facilities
+do you have a swimming pool?,hotel_facilities
+do you have a gym?,hotel_facilities
+do you have spa?,hotel_facilities
+what amenities do you have?,hotel_facilities
+resort amenities,hotel_facilities
+hotel amenities,hotel_facilities
+tell me about your facilities,hotel_facilities
+facilities available,hotel_facilities
+resort features,hotel_facilities
+need to book for the facilities?,hotel_facilities
+do I need to book for facilities?,hotel_facilities
+do I need to book for the facilities?,hotel_facilities
+need to book for facilities?,hotel_facilities
+is booking required for facilities?,hotel_facilities
+do I need reservation to use facilities?,hotel_facilities
+how to use resort facilities?,hotel_facilities
+do I need booking to use pool or gym?,hotel_facilities
+room price,room_price
+room rates,room_price
+how much per night?,room_price
+what are the prices?,room_price
+price list,room_price
+cost of room,room_price
+how much does it cost?,room_price
+room pricing,room_price
+what is the room rate?,room_price
+hotel rates,room_price
+daily rate,room_price
+if i family 4 members suitable book which room?,room_price
+which room suitable for family of 4?,room_price
+family 4 members book which room?,room_price
+what room for 4 people?,room_price
+room recommendation for 4 guests,room_price
+maximum guests per room,room_price
+how many people can stay in standard room?,room_price
+how many people per room?,room_price
+room capacity,room_price
+max capacity,room_price
+which room is recommended for 4 people?,room_price
+room size and capacity,room_price
+which room should I book for 4 guests?,room_price
+suitable room for 4 guests,room_price
+room availability,availability
+check availability,availability
+are there available rooms?,availability
+do you have open rooms?,availability
+is there any room available?,availability
+check room availability,availability
+available rooms,availability
+breakfast included?,breakfast
+is breakfast available?,breakfast
+food options,breakfast
+meal options,breakfast
+does it include breakfast?,breakfast
+breakfast package,breakfast
+dining options,breakfast
+lunch provided?,breakfast
+dinner provided?,breakfast
+is lunch available?,breakfast
+is dinner available?,breakfast
+do you serve lunch?,breakfast
+do you serve dinner?,breakfast
+is lunch included?,breakfast
+is dinner included?,breakfast
+lunch,breakfast
+dinner,breakfast
+lunch and dinner,breakfast
+meals provided?,breakfast
+do you serve food?,breakfast
+dinner got?,breakfast
+got dinner?,breakfast
+lunch got?,breakfast
+got lunch?,breakfast
+do you provide lunch?,breakfast
+do you provide dinner?,breakfast
+why not provide lunch?,breakfast
+why no lunch?,breakfast
+why no dinner?,breakfast
+why not serve lunch?,breakfast
+is there lunch?,breakfast
+is there dinner?,breakfast
+lunch service,breakfast
+dinner service,breakfast
+parking available?,parking
+is parking free?,parking
+car parking,parking
+do you provide parking?,parking
+parking space,parking
+parking lot,parking
+parking can how many cars?,parking
+how many cars can park?,parking
+how many parking spaces?,parking
+how many vehicles can park?,parking
+parking capacity,parking
+can I park 2 cars?,parking
+parking space for cars,parking
+how many cars allowed?,parking
+check in time,checkin_checkout
+check out time,checkin_checkout
+when is checkin?,checkin_checkout
+checkin and checkout times,checkin_checkout
+what is the check in time?,checkin_checkout
+what time is check out?,checkin_checkout
+early check in,checkin_checkout
+how to check in?,checkin_checkout
+how do I check in?,checkin_checkout
+how to check in,checkin_checkout
+check in process,checkin_checkout
+check in procedure,checkin_checkout
+what is the check in process?,checkin_checkout
+how to check out?,checkin_checkout
+how do I check out?,checkin_checkout
+check out procedure,checkin_checkout
+check-in instructions,checkin_checkout
+where to check in?,checkin_checkout
+how to make payment,payment
+how to make a payment,payment
+make payment,payment
+payment,payment
+payment methods,payment
+how to pay?,payment
+do you accept credit card?,payment
+payment options,payment
+how can I pay?,payment
+deposit requirement,payment
+payment process,payment
+how do I make a payment?,payment
+how can I make payment?,payment
+how to pay for booking,payment
+what are the payment methods?,payment
+accepted payment methods,payment
+how to contact?,contact
+contact number,contact
+phone number,contact
+email address,contact
+how to contact you?,contact
+contact details,contact
+customer service number,contact
+call resort,contact
+hotel contact,contact
+phone contact,contact
+email contact,contact
+how to reach you?,contact
+how can I contact the hotel?,contact
+contact info,contact
+contact us,contact
+where are you located?,location
+hotel address,location
+resort location,location
+where is the hotel?,location
+location of resort,location
+address of hotel,location
+how to get there?,location
+where is oriented resort?,location
+location,location
+address,location
+can i change the room type for alice?,modify_booking
+can i change room type?,modify_booking
+can i change the room type?,modify_booking
+change room type,modify_booking
+modify room,modify_booking
+modify booking,modify_booking
+change my room,modify_booking
+change my booking,modify_booking
+update booking,modify_booking
+change room type for booking,modify_booking
+change room category,modify_booking
+can I modify my booking?,modify_booking
+how to change my reservation?,modify_booking
+edit booking details,modify_booking
+change reservation dates,modify_booking
+change guest name,modify_booking
+modify reservation,modify_booking
+i forgot my booking id,booking_status
+forgot booking id,booking_status
+don't know booking id,booking_status
+no booking id,booking_status
+i forgot my reservation id,booking_status
+forgot reservation id,booking_status
+don't have reservation id,booking_status
+i forgot my booking number,booking_status
+forgot my booking number,booking_status
+don't have booking number,booking_status
+don't know my booking number,booking_status
+no booking number,booking_status
+how to check without booking number?,booking_status
+check booking by name and check in date,booking_status
+find reservation for alice,booking_status
+alice check in date 25/08/2026,booking_status
+check booking status for guest alice,booking_status
+look up booking for alice,booking_status
+find my booking by name,booking_status
+check reservation by name,booking_status
+search reservation for alice,booking_status
+help me check my booking,booking_status
+help check booking,booking_status
+can you check my booking?,booking_status
+check my reservation status,booking_status
+i want cancel my booking,cancel_booking
+i want to cancel my booking,cancel_booking
+i want cancel booking,cancel_booking
+cancel my booking,cancel_booking
+i want to cancel,cancel_booking
+cancel booking,cancel_booking
+how to cancel booking,cancel_booking
+cancel reservation,cancel_booking
+i need to cancel my booking,cancel_booking
+i would like to cancel,cancel_booking
+can i cancel booking?,cancel_booking
+how do i cancel my booking?,cancel_booking
+cancel room,cancel_booking
 Is Room Type F available at Resort Hotel for Christine Sanders?,availability
 Do you have room availability for 2 adults in December 2016?,availability
 I want to book Room Type F for 2 guests at Resort Hotel,book_room

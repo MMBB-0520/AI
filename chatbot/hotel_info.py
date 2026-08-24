@@ -46,3 +46,10 @@ ROOM_PRICES = {
     "Family Suite": "RM450",
     "Ocean Villa": "RM780"
 }
+
+ROOM_CAPACITIES = {
+    "Standard Room": "Max 2 guests — RM180/night",
+    "Deluxe Room": "Max 3 guests — RM280/night",
+    "Family Suite": "Max 4-5 guests — RM450/night (Recommended for Family of 4!)",
+    "Ocean Villa": "Max 6 guests — RM780/night"
+}

@@ -1,5 +1,15 @@
 [
     {
+        "booking_id": "BK1005",
+        "name": "Alice",
+        "email": "alice@gmail.com",
+        "room": "Family Suite",
+        "check_in": "24/08/2026",
+        "check_out": "28/08/2026",
+        "guests": "4",
+        "status": "Confirmed"
+    },
+    {
         "booking_id": "BK1000",
         "name": "Ernest Barnes",
         "email": "Ernest.Barnes31@outlook.com",

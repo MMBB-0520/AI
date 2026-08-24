@@ -67,7 +67,7 @@ def main():
 
     print("\nTraining Logistic Regression Model (Higher C for sharper confidence)...")
     lr_model = LogisticRegression(
-        C=20.0,
+        C=50.0,
         random_state=42,
         max_iter=1000
     )
