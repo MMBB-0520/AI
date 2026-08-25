@@ -43,37 +43,22 @@ if PROJECT_ROOT not in sys.path:
 # IMPORT PREPROCESSING
 from chatbot.preprocessing import preprocess_text
 
-# MODEL PATHS
+# MODEL DIRECTORY
 MODEL_DIR = os.path.join(
     PROJECT_ROOT,
     "models"
 )
 
-MODEL_PATH = os.path.join(
-    MODEL_DIR,
-    "svm.pkl"
-)
-
-VECTORIZER_PATH = os.path.join(
-    MODEL_DIR,
-    "svm_vectorizer.pkl"
-)
-
-LABEL_ENCODER_PATH = os.path.join(
-    MODEL_DIR,
-    "svm_label_encoder.pkl"
-)
-
 # INTENT PREDICTOR
 class IntentPredictor:
     """
-    Predict user intent using the trained SVM model.
+    Predict user intent using the trained Machine Learning model (SVM / Logistic Regression).
 
     This class performs inference only.
     It does not train the model.
 
     Components:
-        - SVM classifier
+        - ML classifier
         - TF-IDF vectorizer
         - Label encoder
         - NLP preprocessing pipeline
@@ -85,23 +70,37 @@ class IntentPredictor:
         confidence_threshold: float = 0.50
     ):
         """
-        Initialize the SVM intent predictor.
+        Initialize the intent predictor.
 
         Args:
             model_name:
-                Name of the trained model to use.
+                Name of the trained model to use ("Support Vector Machine", "Logistic Regression", or "Naive Bayes").
             confidence_threshold:
                 Minimum confidence required for accepting
                 the predicted intent.
         """
 
+        self.model_name = model_name
         self.confidence_threshold = confidence_threshold
+
+        if "logistic" in model_name.lower():
+            model_file = os.path.join(MODEL_DIR, "logistic_regression.pkl")
+            vectorizer_file = os.path.join(MODEL_DIR, "lr_vectorizer.pkl")
+            encoder_file = os.path.join(MODEL_DIR, "lr_label_encoder.pkl")
+        elif "naive" in model_name.lower():
+            model_file = os.path.join(MODEL_DIR, "naive_bayes.pkl")
+            vectorizer_file = os.path.join(MODEL_DIR, "nb_vectorizer.pkl")
+            encoder_file = os.path.join(MODEL_DIR, "nb_label_encoder.pkl")
+        else:
+            model_file = os.path.join(MODEL_DIR, "svm.pkl")
+            vectorizer_file = os.path.join(MODEL_DIR, "svm_vectorizer.pkl")
+            encoder_file = os.path.join(MODEL_DIR, "svm_label_encoder.pkl")
 
         # Check required model files
         required_files = {
-            "SVM model": MODEL_PATH,
-            "TF-IDF vectorizer": VECTORIZER_PATH,
-            "Label encoder": LABEL_ENCODER_PATH
+            f"{model_name} model": model_file,
+            "TF-IDF vectorizer": vectorizer_file,
+            "Label encoder": encoder_file
         }
 
         missing_files = [
@@ -114,27 +113,24 @@ class IntentPredictor:
             raise FileNotFoundError(
                 "Required trained model files are missing:\n"
                 + "\n".join(missing_files)
-                + "\n\n"
-                "Please run:\n"
-                "python -m train.train_svm"
             )
 
         # Load trained components
-        print("Loading SVM intent classification model...")
+        print(f"Loading {model_name} intent classification model...")
 
         self.model = joblib.load(
-            MODEL_PATH
+            model_file
         )
 
         self.vectorizer = joblib.load(
-            VECTORIZER_PATH
+            vectorizer_file
         )
 
         self.label_encoder = joblib.load(
-            LABEL_ENCODER_PATH
+            encoder_file
         )
 
-        print("SVM model loaded successfully.")
+        print(f"{model_name} loaded successfully.")
 
         # Display model information
         self.intents = list(

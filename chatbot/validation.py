@@ -26,10 +26,26 @@ sys.path.append(
     )
 )
 
-from chatbot.hotel_info import (
-    ROOM_TYPES,
-    ROOM_TYPE_ALIASES
-)
+try:
+    from chatbot.hotel_info import (
+        ROOM_TYPES,
+        ROOM_TYPE_ALIASES
+    )
+except ImportError:
+    ROOM_TYPES = ["Standard Room", "Deluxe Room", "Family Suite", "Ocean Villa"]
+    ROOM_TYPE_ALIASES = {
+        "standard": "Standard Room",
+        "standard room": "Standard Room",
+        "deluxe": "Deluxe Room",
+        "deluxe room": "Deluxe Room",
+        "family": "Family Suite",
+        "family suite": "Family Suite",
+        "suite": "Family Suite",
+        "ocean": "Ocean Villa",
+        "ocean villa": "Ocean Villa",
+        "villa": "Ocean Villa",
+    }
+
 
 
 # DATE PARSING
