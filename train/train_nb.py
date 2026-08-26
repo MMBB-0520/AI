@@ -3,14 +3,6 @@ train_model.py
 ----------------
 Trains a Multinomial Naive Bayes classifier to recognise user intents
 for the Hotel Booking Chatbot.
-
-Pipeline:
-    1. Load intents.json (patterns -> tag)
-    2. Text pre-processing (lowercasing, punctuation removal, TF-IDF vectorisation)
-    3. Train/test split (stratified, 80/20)
-    4. Train MultinomialNB
-    5. Evaluate: accuracy, precision, recall, F1-score (macro average), confusion matrix
-    6. Save the trained model + vectorizer for use by chatbot.py
 """
 
 import sys
@@ -33,29 +25,64 @@ from sklearn.metrics import (
     ConfusionMatrixDisplay
 )
 
-# Add root directory to sys.path to allow imports from chatbot
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-from chatbot.preprocessing import preprocess_text
+# Setup paths dynamically so it doesn't break depending on where you run it
+CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_ROOT = os.path.abspath(os.path.join(CURRENT_DIR, ".."))
+if PROJECT_ROOT not in sys.path:
+    sys.path.append(PROJECT_ROOT)
 
-DATASET_PATH = "dataset/intents.csv"
-MODEL_PATH = "models/nb.pkl"
-VECTORIZER_PATH = "models/nb_vectorizer.pkl"
-ENCODER_PATH = "models/nb_label_encoder.pkl"
-CM_PATH = "models/nb_confusion_matrix.png"
+# Import preprocessing (with fallback in case they updated the preprocessing script structure)
+try:
+    from chatbot.preprocessing import preprocess_text
+except ImportError:
+    from chatbot.preprocessing import TextPreprocessor
+    preprocessor = TextPreprocessor()
+    preprocess_text = preprocessor.process
+
+# Model save paths
+MODEL_PATH = os.path.join(PROJECT_ROOT, "models", "nb.pkl")
+VECTORIZER_PATH = os.path.join(PROJECT_ROOT, "models", "nb_vectorizer.pkl")
+ENCODER_PATH = os.path.join(PROJECT_ROOT, "models", "nb_label_encoder.pkl")
+CM_PATH = os.path.join(PROJECT_ROOT, "models", "nb_confusion_matrix.png")
 
 
 def main():
     print("========== Loading Dataset (Naive Bayes) ==========")
-    df = pd.read_csv(DATASET_PATH)
+    
+    # 1. Dynamic Dataset Loading (Bulletproof against name changes)
+    dataset_dir = os.path.join(PROJECT_ROOT, "dataset")
+    possible_datasets = [
+        "bitext-hospitality-llm-chatbot-training-dataset.csv",
+        "hotel_booking.csv",
+        "intents.csv"
+    ]
+    
+    dataset_path = None
+    for file in possible_datasets:
+        path = os.path.join(dataset_dir, file)
+        if os.path.exists(path):
+            dataset_path = path
+            break
+            
+    if not dataset_path:
+        raise FileNotFoundError("Could not find any dataset in the /dataset/ folder!")
+        
+    print(f"Loaded dataset: {os.path.basename(dataset_path)}")
+    df = pd.read_csv(dataset_path)
 
     print(f"Total dataset rows: {len(df)}")
-    print(f"Unique intents: {df['intent'].nunique()}")
+    
+    # 2. Handle column name changes safely ('text' vs 'utterance')
+    text_col = 'utterance' if 'utterance' in df.columns else 'text'
+    intent_col = 'intent'
+
+    print(f"Unique intents: {df[intent_col].nunique()}")
 
     # Apply preprocessing pipeline
     print("Applying NLP preprocessing (normalization, tokenization, lemmatization)...")
-    X_raw = df["text"]
+    X_raw = df[text_col].astype(str)
     X_cleaned = X_raw.apply(preprocess_text)
-    y_raw = df["intent"]
+    y_raw = df[intent_col]
 
     label_encoder = LabelEncoder()
     y = label_encoder.fit_transform(y_raw)
@@ -99,6 +126,8 @@ def main():
     disp.plot(ax=ax, xticks_rotation=45, cmap="Blues")
     plt.title("Naive Bayes Intent Classification - Confusion Matrix")
     plt.tight_layout()
+    
+    os.makedirs(os.path.dirname(CM_PATH), exist_ok=True)
     plt.savefig(CM_PATH)
 
     print("\nSaving trained Naive Bayes model & preprocessors...")
@@ -106,7 +135,6 @@ def main():
     joblib.dump(vectorizer, VECTORIZER_PATH)
     joblib.dump(label_encoder, ENCODER_PATH)
     print("Naive Bayes Model trained and saved successfully!")
-
 
 if __name__ == "__main__":
     main()
