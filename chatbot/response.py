@@ -208,6 +208,80 @@ responses = {
 }
 
 
+HUMAN_INTENT_NAMES = {
+    "book_hotel": "🏨 Book a Room",
+    "cancel_hotel_reservation": "❌ Cancel Reservation",
+    "change_hotel_reservation": "✏️ Modify Reservation",
+    "check_hotel_reservation": "🔍 Check Booking Status",
+    "check_hotel_prices": "💰 Room Prices & Rates",
+    "check_hotel_facilities": "🏊 Resort Facilities",
+    "check_hotel_offers": "🎁 Special Offers & Discounts",
+    "check_in": "⏰ Check-in Time",
+    "check_out": "⏰ Check-out Time",
+    "checkin_checkout": "⏰ Check-in / Check-out Times",
+    "book_parking_space": "🚗 Free Parking Info",
+    "bring_pets": "🐾 Pet Policy",
+    "check_menu": "🍳 Breakfast & Dining",
+    "invoices": "🧾 Invoices & Receipts",
+    "cancellation_fees": "💳 Cancellation Policy",
+    "customer_service": "📞 Customer Support",
+    "human_agent": "🎧 Connect to Human Agent",
+    "host_event": "🎉 Event & Banquet Halls",
+    "file_complaint": "💬 Complaints & Feedback",
+    "leave_review": "⭐ Reviews & Ratings",
+    "store_luggage": "🧳 Luggage Storage",
+    "add_night": "📅 Extend Stay / Add Night",
+    "redeem_points": "🎁 Reward Points",
+    "get_refund": "💵 Refund Status",
+    "shuttle_service": "🚌 Shuttle Transport",
+    "search_hotel": "🏨 Hotel Overview",
+    "greeting": "👋 Greeting",
+    "goodbye": "👋 Goodbye",
+    "location": "📍 Location & Address",
+    "contact": "📞 Contact Details",
+    "payment": "💳 Payment Options",
+    "availability": "📅 Check Availability"
+}
+
+
+def generate_fallback_response(user_query, predictor, confidence=0.0):
+    """
+    Generate dynamic Top-K candidate recommendation or general help menu for low confidence input.
+    """
+    if confidence < 0.20:
+        return (
+            "Sorry, I am not quite sure what you mean.\n\n"
+            "BookMate currently assists with hotel services. You can ask about:\n"
+            "• 🏨 **Room Booking & Reservations**\n"
+            "• 💰 **Room Prices & Availability**\n"
+            "• 🏊 **Resort Facilities & Breakfast**\n"
+            "• ⏰ **Check-in / Check-out Times**\n"
+            "• 🚗 **Free Parking & Contact Details**"
+        )
+    
+    top_result = predictor.predict_top(user_query, top_k=3)
+    top_predictions = top_result.get("top_predictions", [])
+
+    candidates = []
+    for item in top_predictions:
+        intent_tag = item["intent"]
+        display_name = HUMAN_INTENT_NAMES.get(intent_tag, intent_tag.replace("_", " ").title())
+        conf_pct = item["confidence"]
+        candidates.append(f"• **{display_name}** ({conf_pct:.1%})")
+
+    if candidates:
+        return (
+            "Sorry, I am not quite sure what you mean. Were you looking for one of these options?\n\n"
+            + "\n".join(candidates) + "\n\n"
+            "Please feel free to rephrase your question or select a topic above!"
+        )
+
+    return (
+        "Sorry, I didn't quite understand that. Could you please rephrase your request?\n\n"
+        "You can ask me about room booking, prices, facilities, breakfast, parking, or check-in/out times."
+    )
+
+
 def get_response(intent, entities=None):
     """
     Return a response based on the predicted intent and extracted entities.
@@ -224,3 +298,4 @@ def get_response(intent, entities=None):
             ["I'm sorry, I didn't understand your question. Could you please rephrase it?"]
         )
     )
+

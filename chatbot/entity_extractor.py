@@ -336,28 +336,28 @@ class EntityExtractor:
 
         text_lower = text.lower()
 
-        # 1. ISO dates
-        iso_dates = re.findall(
-            r"\b\d{4}[-/]\d{1,2}[-/]\d{1,2}\b",
+        # 1. Date regex (ISO YYYY-MM-DD / YYYY/MM/DD and UK/EU DD/MM/YYYY / DD-MM-YYYY)
+        dates_found = re.findall(
+            r"\b(?:\d{4}[-/.]\d{1,2}[-/.]\d{1,2}|\d{1,2}[-/.]\d{1,2}[-/.]\d{2,4})\b",
             text_lower
         )
 
-        if len(iso_dates) >= 2:
+        if len(dates_found) >= 2:
             results["check_in"] = self._normalize_date(
-                iso_dates[0],
+                dates_found[0],
                 reference_date
             )
 
             results["check_out"] = self._normalize_date(
-                iso_dates[1],
+                dates_found[1],
                 reference_date
             )
 
             return results
 
-        if len(iso_dates) == 1:
+        if len(dates_found) == 1:
             results["check_in"] = self._normalize_date(
-                iso_dates[0],
+                dates_found[0],
                 reference_date
             )
 

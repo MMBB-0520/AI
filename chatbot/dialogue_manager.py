@@ -16,6 +16,7 @@ The Dialogue Manager decides what the chatbot should do next.
 import json
 import os
 import random
+import re
 import sys
 
 # Ensure PROJECT_ROOT is in sys.path
@@ -25,7 +26,7 @@ PROJECT_ROOT = os.path.abspath(
 if PROJECT_ROOT not in sys.path:
     sys.path.append(PROJECT_ROOT)
 
-from chatbot.hotel_info import HOTEL_NAME, PHONE
+from chatbot.hotel_info import HOTEL_NAME, PHONE, ROOM_PRICES
 from chatbot.entity_extractor import extract_entities
 from chatbot.validation import (
     validate_name,
@@ -78,7 +79,11 @@ class DialogueManager:
 
             # Contact information
             "email": None,
-            "phone": None
+            "phone": None,
+
+            # Pending context tracking
+            "pending_intent": None,
+            "awaiting_slot": None
         }
 
     def reset(self):
@@ -189,6 +194,36 @@ class DialogueManager:
             f"• **Check-out**: {booking.get('check_out', 'N/A')}\n"
             f"• **Guests**: {booking.get('guests', 'N/A')}\n"
             f"• **Status**: {emoji} {status}"
+        )
+
+    def _format_invoice_details(self, booking):
+        """Format official tax invoice for chatbot response."""
+        b_id = booking.get("booking_id", "N/A")
+        name = booking.get("name", "N/A")
+        room = booking.get("room", "Standard Room")
+        check_in = booking.get("check_in", "N/A")
+        check_out = booking.get("check_out", "N/A")
+        guests = booking.get("guests", 1)
+        status = booking.get("status", "Confirmed")
+
+        rate_str = ROOM_PRICES.get(room, "RM 180")
+        digits = re.findall(r"\d+", rate_str)
+        rate_num = int(digits[0]) if digits else 180
+        total_price = rate_num * 2
+        tax = int(total_price * 0.06)
+        grand_total = total_price + tax
+
+        return (
+            f"🧾 **Official Tax Invoice ({b_id})**\n\n"
+            f"• **Guest Name**: {name}\n"
+            f"• **Room Reserved**: {room}\n"
+            f"• **Check-in / Check-out**: {check_in} - {check_out}\n"
+            f"• **Guests**: {guests}\n"
+            f"• **Room Rate**: {rate_str}/night\n"
+            f"• **Subtotal**: RM{total_price}\n"
+            f"• **SST Tax (6%)**: RM{tax}\n"
+            f"• **Grand Total Paid**: **RM{grand_total}**\n"
+            f"• **Payment Status**: ✅ Paid ({status})"
         )
 
     # BOOKING VALIDATION
@@ -593,6 +628,48 @@ class DialogueManager:
                 f"front desk at **{PHONE}**."
             )
 
+        if action == "invoices":
+            if not booking:
+                return (
+                    f"Could not find Booking ID **{booking_id}**. "
+                    f"Please check your reference number."
+                )
+            self.reset()
+            return self._format_invoice_details(booking)
+
+        if action == "add_night":
+            if not booking:
+                return (
+                    f"Could not find Booking ID **{booking_id}**. "
+                    f"Please check your reference number."
+                )
+            self.reset()
+            return (
+                f"Found your booking **{booking_id}** ({booking.get('room', 'N/A')}).\n\n"
+                f"To extend your stay, please contact our front desk directly at **{PHONE}** "
+                f"or let us know your preferred extension dates!"
+            )
+
+        if action == "get_refund":
+            if not booking:
+                return (
+                    f"Could not find Booking ID **{booking_id}**. "
+                    f"Please check your reference number."
+                )
+            b_status = booking.get("status", "Confirmed")
+            self.reset()
+            if b_status == "Cancelled":
+                return (
+                    f"💵 **Refund Status for Booking {booking_id}**\n\n"
+                    f"Your cancellation has been verified. A full refund is being processed "
+                    f"to your original payment method (5-7 business days)."
+                )
+            else:
+                return (
+                    f"Reservation **{booking_id}** is currently **{b_status}**.\n\n"
+                    f"To request a refund, please process cancellation first or call **{PHONE}**."
+                )
+
         return None
 
     # MAIN MESSAGE HANDLER
@@ -667,7 +744,10 @@ class DialogueManager:
             and self.state["action"] in [
                 "cancel",
                 "status",
-                "modify"
+                "modify",
+                "invoices",
+                "add_night",
+                "get_refund"
             ]
         ):
 
@@ -700,6 +780,8 @@ class DialogueManager:
 
             self.state["active"] = True
             self.state["action"] = "cancel"
+            self.state["pending_intent"] = "cancel_hotel_reservation"
+            self.state["awaiting_slot"] = "booking_id"
 
             return (
                 "Sure! Please provide your **Booking ID** "
@@ -717,6 +799,8 @@ class DialogueManager:
 
             self.state["active"] = True
             self.state["action"] = "status"
+            self.state["pending_intent"] = "check_hotel_reservation"
+            self.state["awaiting_slot"] = "booking_id"
 
             return (
                 "I'd be happy to check your reservation. "
@@ -734,11 +818,69 @@ class DialogueManager:
 
             self.state["active"] = True
             self.state["action"] = "modify"
+            self.state["pending_intent"] = "change_hotel_reservation"
+            self.state["awaiting_slot"] = "booking_id"
 
             return (
                 "Sure! Please provide your **Booking ID** "
                 "(e.g. BK1234) to update your reservation."
             )
+
+        # INVOICES
+        if intent == "invoices":
+            if booking_id:
+                return self._handle_booking_id_action("invoices", booking_id)
+
+            self.state["active"] = True
+            self.state["action"] = "invoices"
+            self.state["pending_intent"] = "invoices"
+            self.state["awaiting_slot"] = "booking_id"
+
+            return (
+                "To retrieve your official tax invoice, please provide your **Booking ID** "
+                "(e.g. BK7496)."
+            )
+
+        # EXTEND STAY (ADD NIGHT)
+        if intent == "add_night":
+            if booking_id:
+                return self._handle_booking_id_action("add_night", booking_id)
+
+            self.state["active"] = True
+            self.state["action"] = "add_night"
+            self.state["pending_intent"] = "add_night"
+            self.state["awaiting_slot"] = "booking_id"
+
+            return (
+                "I'd be happy to help extend your stay! Please provide your **Booking ID** "
+                "(e.g. BK7496)."
+            )
+
+        # GET REFUND
+        if intent == "get_refund":
+            if booking_id:
+                return self._handle_booking_id_action("get_refund", booking_id)
+
+            self.state["active"] = True
+            self.state["action"] = "get_refund"
+            self.state["pending_intent"] = "get_refund"
+            self.state["awaiting_slot"] = "booking_id"
+
+            return (
+                "To process your refund request, please share your **Booking ID** "
+                "(e.g. BK7496)."
+            )
+
+        # AVAILABILITY INQUIRY CONTEXT TRACKING
+        if intent == "availability":
+            checkin = entities.get("check_in")
+            if not checkin:
+                self.state["pending_intent"] = "availability"
+                self.state["awaiting_slot"] = "check_in"
+                return "I'd be happy to check room availability for you. What is your check-in date?"
+            else:
+                self.state["pending_intent"] = None
+                self.state["awaiting_slot"] = None
 
         # NEW BOOKING
         if intent == "book_hotel":
@@ -763,6 +905,19 @@ class DialogueManager:
                 user_input,
                 entities
             )
+
+        # PRICE INQUIRY CONTEXT TRACKING
+        if intent in ["check_hotel_prices", "room_price"]:
+            if not entities.get("room_type"):
+                self.state["pending_intent"] = "check_hotel_prices"
+                self.state["awaiting_slot"] = "room_type"
+            else:
+                self.state["pending_intent"] = None
+                self.state["awaiting_slot"] = None
+
+        # STANDALONE BOOKING ID EXPRESS RULE
+        if booking_id and not self.state["active"]:
+            return self._handle_booking_id_action("status", booking_id)
 
         return None
 

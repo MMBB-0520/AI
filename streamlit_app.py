@@ -5,7 +5,7 @@ from chatbot.preprocessing import process_input
 from chatbot.entity_extractor import extract_entities
 from chatbot.intent_classifier import IntentPredictor
 from chatbot.dialogue_manager import DialogueManager
-from chatbot.response import get_response
+from chatbot.response import get_response, generate_fallback_response
 
 
 # CONFIGURATION
@@ -39,6 +39,12 @@ with st.sidebar:
             "Naive Bayes",
             "Logistic Regression"
         ]
+    )
+
+    show_debug = st.toggle(
+        "🔍 Developer Debug Mode",
+        value=False,
+        help="Show ML model, predicted intent, confidence %, and extracted entities."
     )
 
     st.divider()
@@ -115,9 +121,10 @@ for message in st.session_state.messages:
 
         st.markdown(message["content"])
 
-        # Display ML prediction information
+        # Display ML prediction information when Developer Debug Mode is enabled
         if (
-            message["role"] == "assistant"
+            show_debug
+            and message["role"] == "assistant"
             and "prediction" in message
         ):
 
@@ -179,18 +186,30 @@ if user_input:
 
     current_action = dialogue_state.get("action")
 
+    # 5.5 MULTI-TURN CONTEXT INHERITANCE & BOOKING ID EXPRESS RULE
+    pending_intent = dialogue_state.get("pending_intent")
+    awaiting_slot = dialogue_state.get("awaiting_slot")
+
+    if pending_intent and awaiting_slot and extracted_entities.get(awaiting_slot):
+        intent = pending_intent
+        confidence = 1.0
+        dialogue_state["pending_intent"] = None
+        dialogue_state["awaiting_slot"] = None
+    elif extracted_entities.get("booking_id"):
+        # Standalone Booking ID Express Bypass
+        intent = pending_intent or "check_hotel_reservation"
+        confidence = 1.0
+
     # 6. LOW CONFIDENCE HANDLING
     if (
         confidence < CONFIDENCE_THRESHOLD
         and not booking_active
     ):
 
-        bot_reply = (
-            "Sorry, I didn't quite understand that. "
-            "Could you please rephrase your request?\n\n"
-            "You can ask me about room booking, room prices, "
-            "facilities, breakfast, parking, payment, "
-            "or check-in/check-out."
+        bot_reply = generate_fallback_response(
+            user_input,
+            predictor=predictor,
+            confidence=confidence
         )
 
     else:

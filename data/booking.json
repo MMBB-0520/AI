@@ -84,5 +84,14 @@
         "check_out": "2026-10-05",
         "guests": 2,
         "status": "Confirmed"
+    },
+    {
+        "booking_id": "BK2356",
+        "name": "Ian",
+        "room": "Deluxe Room",
+        "check_in": "2026-08-30",
+        "check_out": "2026-09-01",
+        "guests": 5,
+        "status": "Confirmed"
     }
 ]
