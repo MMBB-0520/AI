@@ -93,5 +93,14 @@
         "check_out": "2026-09-01",
         "guests": 5,
         "status": "Confirmed"
+    },
+    {
+        "booking_id": "BK1905",
+        "name": "Yj",
+        "room": "Standard Room",
+        "check_in": "2026-09-01",
+        "check_out": "2026-09-02",
+        "guests": 2,
+        "status": "Confirmed"
     }
 ]
