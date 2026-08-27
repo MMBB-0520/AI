@@ -104,5 +104,48 @@ def main():
     joblib.dump(label_encoder, ENCODER_PATH)
     print("SVM training completed successfully!")
 
+    print(
+        "Generating confusion matrix..."
+    )
+
+    cm = confusion_matrix(
+        y_test,
+        y_pred
+    )
+
+    fig, ax = plt.subplots(
+        figsize=(14, 12)
+    )
+
+    disp = ConfusionMatrixDisplay(
+        confusion_matrix=cm,
+        display_labels=label_encoder.classes_
+    )
+
+    disp.plot(
+        ax=ax,
+        xticks_rotation=90,
+        cmap="Blues",
+        colorbar=False
+    )
+
+    plt.title(
+        "SVM Intent Classification - Confusion Matrix"
+    )
+
+    plt.tight_layout()
+
+    plt.savefig(
+        CM_PATH,
+        dpi=200
+    )
+
+    plt.close()
+
+    print(
+        f"Confusion matrix saved to:\n"
+        f"{CM_PATH}"
+    )
+
 if __name__ == "__main__":
     main()
