@@ -31,7 +31,24 @@ sys.path.append(
     )
 )
 
-from chatbot.hotel_info import ROOM_TYPES, ROOM_TYPE_ALIASES
+try:
+    from chatbot.hotel_info import ROOM_TYPES, ROOM_TYPE_ALIASES
+except ImportError:
+    # Fallback definitions if hotel_info does not export these names
+    ROOM_TYPES = ["Standard Room", "Deluxe Room", "Family Suite", "Ocean Villa"]
+    ROOM_TYPE_ALIASES = {
+        "standard": "Standard Room",
+        "standard room": "Standard Room",
+        "deluxe": "Deluxe Room",
+        "deluxe room": "Deluxe Room",
+        "family": "Family Suite",
+        "family suite": "Family Suite",
+        "suite": "Family Suite",
+        "ocean": "Ocean Villa",
+        "ocean villa": "Ocean Villa",
+        "villa": "Ocean Villa",
+    }
+
 
 
 class EntityExtractor:
@@ -151,14 +168,20 @@ class EntityExtractor:
     # GUESTS
     def extract_guests(self, text: str) -> int | None:
         """
-        Extract total number of guests.
+        Extract number of guests.
 
-        Examples:
+        Supported examples:
             "2 guests" -> 2
             "3 people" -> 3
             "4 pax" -> 4
             "2 adults" -> 2
-            "for 5" -> 5
+            "for 5 people" -> 5
+            "for 2 adults" -> 2
+
+        Avoids interpreting:
+            "for 3 nights"
+            "for 2 rooms"
+        as guest count.
         """
 
         if not text:
@@ -166,42 +189,45 @@ class EntityExtractor:
 
         text_lower = text.lower()
 
-        # Numeric guest expressions
-        match = re.search(
+        # 1. Explicit guest expressions
+        numeric_match = re.search(
             r"\b(\d+)\s*"
-            r"(?:people|person|guest|guests|pax|adult|adults)\b",
+            r"(?:people|person|guests?|pax|adults?)\b",
             text_lower
         )
 
-        if match:
-            return int(match.group(1))
+        if numeric_match:
+            return int(numeric_match.group(1))
 
-        # Word-number guest expressions
+        # 2. Word-number guest expressions
         for word, number in self.word_to_num.items():
+
             pattern = (
                 r"\b"
                 + word
                 + r"\s+"
-                r"(?:people|person|guest|guests|pax|adult|adults)\b"
+                r"(?:people|person|guests?|pax|adults?)\b"
             )
 
             if re.search(pattern, text_lower):
                 return number
 
-        # Booking context:
-        # "room for 4"
-        # "booking for 2"
-        match = re.search(
-            r"\b(?:for|with)\s+(\d+)\s*"
-            r"(?:people|person|guest|guests|pax)?\b",
+        # 3. "for N" booking context
+
+        # Only accept if N is NOT followed by:
+        # nights / rooms / days
+        numeric_for_match = re.search(
+            r"\b(?:for|with)\s+(\d+)"
+            r"(?!\s*(?:night|nights|room|rooms|day|days))"
+            r"(?:\s*(?:people|person|guests?|pax|adults?))?\b",
             text_lower
         )
 
-        if match:
-            return int(match.group(1))
+        if numeric_for_match:
+            return int(numeric_for_match.group(1))
 
         return None
-
+        
     # NIGHTS
     def extract_nights(self, text: str) -> int | None:
         """
@@ -327,28 +353,28 @@ class EntityExtractor:
 
         text_lower = text.lower()
 
-        # 1. ISO dates
-        iso_dates = re.findall(
-            r"\b\d{4}[-/]\d{1,2}[-/]\d{1,2}\b",
+        # 1. Date regex (ISO YYYY-MM-DD / YYYY/MM/DD and UK/EU DD/MM/YYYY / DD-MM-YYYY)
+        dates_found = re.findall(
+            r"\b(?:\d{4}[-/.]\d{1,2}[-/.]\d{1,2}|\d{1,2}[-/.]\d{1,2}[-/.]\d{2,4})\b",
             text_lower
         )
 
-        if len(iso_dates) >= 2:
+        if len(dates_found) >= 2:
             results["check_in"] = self._normalize_date(
-                iso_dates[0],
+                dates_found[0],
                 reference_date
             )
 
             results["check_out"] = self._normalize_date(
-                iso_dates[1],
+                dates_found[1],
                 reference_date
             )
 
             return results
 
-        if len(iso_dates) == 1:
+        if len(dates_found) == 1:
             results["check_in"] = self._normalize_date(
-                iso_dates[0],
+                dates_found[0],
                 reference_date
             )
 

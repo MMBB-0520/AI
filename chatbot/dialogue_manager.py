@@ -16,6 +16,7 @@ The Dialogue Manager decides what the chatbot should do next.
 import json
 import os
 import random
+import re
 import sys
 
 # Ensure PROJECT_ROOT is in sys.path
@@ -25,7 +26,7 @@ PROJECT_ROOT = os.path.abspath(
 if PROJECT_ROOT not in sys.path:
     sys.path.append(PROJECT_ROOT)
 
-from chatbot.hotel_info import HOTEL_NAME, PHONE
+from chatbot.hotel_info import HOTEL_NAME, PHONE, ROOM_PRICES
 from chatbot.entity_extractor import extract_entities
 from chatbot.validation import (
     validate_name,
@@ -64,13 +65,25 @@ class DialogueManager:
             "action": None,
             "step": 0,
 
+            # Booking information
+            "booking_id": None,
             "name": None,
+
+            "room": None,
+            "rooms": None,
+            "guests": None,
+
             "checkin": None,
             "checkout": None,
-            "guests": None,
-            "room": None,
+            "nights": None,
 
-            "booking_id": None
+            # Contact information
+            "email": None,
+            "phone": None,
+
+            # Pending context tracking
+            "pending_intent": None,
+            "awaiting_slot": None
         }
 
     def reset(self):
@@ -183,6 +196,36 @@ class DialogueManager:
             f"• **Status**: {emoji} {status}"
         )
 
+    def _format_invoice_details(self, booking):
+        """Format official tax invoice for chatbot response."""
+        b_id = booking.get("booking_id", "N/A")
+        name = booking.get("name", "N/A")
+        room = booking.get("room", "Standard Room")
+        check_in = booking.get("check_in", "N/A")
+        check_out = booking.get("check_out", "N/A")
+        guests = booking.get("guests", 1)
+        status = booking.get("status", "Confirmed")
+
+        rate_str = ROOM_PRICES.get(room, "RM 180")
+        digits = re.findall(r"\d+", rate_str)
+        rate_num = int(digits[0]) if digits else 180
+        total_price = rate_num * 2
+        tax = int(total_price * 0.06)
+        grand_total = total_price + tax
+
+        return (
+            f"🧾 **Official Tax Invoice ({b_id})**\n\n"
+            f"• **Guest Name**: {name}\n"
+            f"• **Room Reserved**: {room}\n"
+            f"• **Check-in / Check-out**: {check_in} - {check_out}\n"
+            f"• **Guests**: {guests}\n"
+            f"• **Room Rate**: {rate_str}/night\n"
+            f"• **Subtotal**: RM{total_price}\n"
+            f"• **SST Tax (6%)**: RM{tax}\n"
+            f"• **Grand Total Paid**: **RM{grand_total}**\n"
+            f"• **Payment Status**: ✅ Paid ({status})"
+        )
+
     # BOOKING VALIDATION
     def _apply_entity(self, entity_name, value):
         """
@@ -255,6 +298,26 @@ class DialogueManager:
 
             return False, error
 
+        if entity_name == "rooms":
+            self.state["rooms"] = value
+            return True, None
+
+        if entity_name == "nights":
+            self.state["nights"] = value
+            return True, None
+
+        if entity_name == "email":
+            self.state["email"] = value
+            return True, None
+
+        if entity_name == "phone":
+            self.state["phone"] = value
+            return True, None
+
+        if entity_name == "booking_id":
+            self.state["booking_id"] = value
+            return True, None
+
         return True, None
 
     # APPLY ALL EXTRACTED BOOKING ENTITIES
@@ -270,11 +333,16 @@ class DialogueManager:
         # Order matters:
         # check-in should be processed before check-out.
         ordered_entities = [
+            "booking_id",
             "name",
             "check_in",
             "check_out",
+            "nights",
             "guests",
-            "room_type"
+            "rooms",
+            "room_type",
+            "email",
+            "phone"
         ]
 
         for key in ordered_entities:
@@ -297,7 +365,6 @@ class DialogueManager:
     # NEXT BOOKING QUESTION
     def _get_missing_booking_field(self):
         """Return the first missing booking field."""
-
         if not self.state.get("name"):
             return "name"
 
@@ -404,73 +471,120 @@ class DialogueManager:
         """
         Continue an existing booking conversation.
 
-        Example:
+        Important:
+        During an active booking wizard, the current step has priority
+        over the generic entity extraction result.
 
-        Bot:
-        May I have your name?
-
-        User:
-        John
-
-        Bot:
-        What is your check-in date?
-
-        User:
-        2026-10-01
+        This prevents a single date such as "2026-10-05" from being
+        incorrectly interpreted as check-in when the chatbot is actually
+        asking for check-out.
         """
 
-        # First try extracted entities.
-        error = self._update_booking_state(entities)
-
-        if error:
-            return error
-
-        # If entity extraction did not understand the answer,
-        # use current step as a fallback.
         step = self.state.get("step")
 
+        # STEP 1: NAME
         if step == 1 and not self.state.get("name"):
-            valid, value, error = validate_name(user_input)
+
+            value = entities.get("name")
+
+            if value is not None:
+                valid, cleaned, error = validate_name(value)
+            else:
+                valid, cleaned, error = validate_name(user_input)
 
             if not valid:
                 return error
 
-            self.state["name"] = value
+            self.state["name"] = cleaned
 
-        elif step == 2 and not self.state.get("checkin"):
-            valid, value, error = validate_checkin_date(user_input)
+            return self._ask_next_booking_question()
+
+        # STEP 2: CHECK-IN
+        if step == 2 and not self.state.get("checkin"):
+
+            value = entities.get("check_in")
+
+            if value is not None:
+                valid, cleaned, error = validate_checkin_date(value)
+            else:
+                valid, cleaned, error = validate_checkin_date(user_input)
 
             if not valid:
                 return error
 
-            self.state["checkin"] = value
+            self.state["checkin"] = cleaned
 
-        elif step == 3 and not self.state.get("checkout"):
-            valid, value, error = validate_checkout_date(
+            return self._ask_next_booking_question()
+
+        # STEP 3: CHECK-OUT
+        if step == 3 and not self.state.get("checkout"):
+
+            # IMPORTANT:
+            # Do NOT use entities["check_in"] here.
+            #
+            # EntityExtractor sees a standalone date as check_in.
+            # But in this dialogue step, that date is actually check-out.
+
+            value = entities.get("check_out")
+
+            if value is not None:
+                checkout_value = value
+            else:
+                # If user supplied a standalone date, validate the
+                # original user input as the checkout date.
+                checkout_value = user_input.strip()
+
+            valid, cleaned, error = validate_checkout_date(
                 self.state["checkin"],
-                user_input
+                checkout_value
             )
 
             if not valid:
                 return error
 
-            self.state["checkout"] = value
+            self.state["checkout"] = cleaned
 
-        elif step == 4 and not self.state.get("guests"):
-            valid, value, error = validate_guests(user_input)
+            return self._ask_next_booking_question()
+
+        # STEP 4: GUESTS
+        if step == 4 and not self.state.get("guests"):
+
+            value = entities.get("guests")
+
+            if value is not None:
+                valid, cleaned, error = validate_guests(value)
+            else:
+                valid, cleaned, error = validate_guests(user_input)
 
             if not valid:
                 return error
 
-            self.state["guests"] = value
+            self.state["guests"] = cleaned
 
-        elif step == 5 and not self.state.get("room"):
-            valid, value, error = validate_room_type(user_input)
+            return self._ask_next_booking_question()
+
+        # STEP 5: ROOM
+        if step == 5 and not self.state.get("room"):
+
+            value = entities.get("room_type")
+
+            if value is not None:
+                valid, cleaned, error = validate_room_type(value)
+            else:
+                valid, cleaned, error = validate_room_type(user_input)
 
             if not valid:
                 return error
 
-            self.state["room"] = value
+            self.state["room"] = cleaned
+
+            return self._ask_next_booking_question()
+
+        # FALLBACK
+        error = self._update_booking_state(entities)
+
+        if error:
+            return error
 
         return self._ask_next_booking_question()
 
@@ -513,6 +627,48 @@ class DialogueManager:
                 f"To modify your reservation, please contact our "
                 f"front desk at **{PHONE}**."
             )
+
+        if action == "invoices":
+            if not booking:
+                return (
+                    f"Could not find Booking ID **{booking_id}**. "
+                    f"Please check your reference number."
+                )
+            self.reset()
+            return self._format_invoice_details(booking)
+
+        if action == "add_night":
+            if not booking:
+                return (
+                    f"Could not find Booking ID **{booking_id}**. "
+                    f"Please check your reference number."
+                )
+            self.reset()
+            return (
+                f"Found your booking **{booking_id}** ({booking.get('room', 'N/A')}).\n\n"
+                f"To extend your stay, please contact our front desk directly at **{PHONE}** "
+                f"or let us know your preferred extension dates!"
+            )
+
+        if action == "get_refund":
+            if not booking:
+                return (
+                    f"Could not find Booking ID **{booking_id}**. "
+                    f"Please check your reference number."
+                )
+            b_status = booking.get("status", "Confirmed")
+            self.reset()
+            if b_status == "Cancelled":
+                return (
+                    f"💵 **Refund Status for Booking {booking_id}**\n\n"
+                    f"Your cancellation has been verified. A full refund is being processed "
+                    f"to your original payment method (5-7 business days)."
+                )
+            else:
+                return (
+                    f"Reservation **{booking_id}** is currently **{b_status}**.\n\n"
+                    f"To request a refund, please process cancellation first or call **{PHONE}**."
+                )
 
         return None
 
@@ -588,7 +744,10 @@ class DialogueManager:
             and self.state["action"] in [
                 "cancel",
                 "status",
-                "modify"
+                "modify",
+                "invoices",
+                "add_night",
+                "get_refund"
             ]
         ):
 
@@ -611,7 +770,7 @@ class DialogueManager:
             return "Please provide a valid Booking ID, for example **BK1234**."
 
         # CANCEL BOOKING
-        if intent == "cancel_booking":
+        if intent == "cancel_hotel_reservation":
 
             if booking_id:
                 return self._handle_booking_id_action(
@@ -621,6 +780,8 @@ class DialogueManager:
 
             self.state["active"] = True
             self.state["action"] = "cancel"
+            self.state["pending_intent"] = "cancel_hotel_reservation"
+            self.state["awaiting_slot"] = "booking_id"
 
             return (
                 "Sure! Please provide your **Booking ID** "
@@ -628,7 +789,7 @@ class DialogueManager:
             )
 
         # BOOKING STATUS
-        if intent == "booking_status":
+        if intent == "check_hotel_reservation":
 
             if booking_id:
                 return self._handle_booking_id_action(
@@ -638,6 +799,8 @@ class DialogueManager:
 
             self.state["active"] = True
             self.state["action"] = "status"
+            self.state["pending_intent"] = "check_hotel_reservation"
+            self.state["awaiting_slot"] = "booking_id"
 
             return (
                 "I'd be happy to check your reservation. "
@@ -645,7 +808,7 @@ class DialogueManager:
             )
 
         # MODIFY BOOKING
-        if intent == "modify_booking":
+        if intent == "change_hotel_reservation":
 
             if booking_id:
                 return self._handle_booking_id_action(
@@ -655,14 +818,72 @@ class DialogueManager:
 
             self.state["active"] = True
             self.state["action"] = "modify"
+            self.state["pending_intent"] = "change_hotel_reservation"
+            self.state["awaiting_slot"] = "booking_id"
 
             return (
                 "Sure! Please provide your **Booking ID** "
                 "(e.g. BK1234) to update your reservation."
             )
 
+        # INVOICES
+        if intent == "invoices":
+            if booking_id:
+                return self._handle_booking_id_action("invoices", booking_id)
+
+            self.state["active"] = True
+            self.state["action"] = "invoices"
+            self.state["pending_intent"] = "invoices"
+            self.state["awaiting_slot"] = "booking_id"
+
+            return (
+                "To retrieve your official tax invoice, please provide your **Booking ID** "
+                "(e.g. BK7496)."
+            )
+
+        # EXTEND STAY (ADD NIGHT)
+        if intent == "add_night":
+            if booking_id:
+                return self._handle_booking_id_action("add_night", booking_id)
+
+            self.state["active"] = True
+            self.state["action"] = "add_night"
+            self.state["pending_intent"] = "add_night"
+            self.state["awaiting_slot"] = "booking_id"
+
+            return (
+                "I'd be happy to help extend your stay! Please provide your **Booking ID** "
+                "(e.g. BK7496)."
+            )
+
+        # GET REFUND
+        if intent == "get_refund":
+            if booking_id:
+                return self._handle_booking_id_action("get_refund", booking_id)
+
+            self.state["active"] = True
+            self.state["action"] = "get_refund"
+            self.state["pending_intent"] = "get_refund"
+            self.state["awaiting_slot"] = "booking_id"
+
+            return (
+                "To process your refund request, please share your **Booking ID** "
+                "(e.g. BK7496)."
+            )
+
+        # AVAILABILITY INQUIRY CONTEXT TRACKING
+        if intent == "availability":
+            checkin = entities.get("check_in")
+            if not checkin:
+                self.state["pending_intent"] = "availability"
+                self.state["awaiting_slot"] = "check_in"
+                return "I'd be happy to check room availability for you. What is your check-in date?"
+            else:
+                self.state["pending_intent"] = None
+                self.state["awaiting_slot"] = None
+
         # NEW BOOKING
-        if intent == "book_room":
+        if intent == "book_hotel":
 
             if not self.state["active"]:
 
@@ -684,6 +905,19 @@ class DialogueManager:
                 user_input,
                 entities
             )
+
+        # PRICE INQUIRY CONTEXT TRACKING
+        if intent in ["check_hotel_prices", "room_price"]:
+            if not entities.get("room_type"):
+                self.state["pending_intent"] = "check_hotel_prices"
+                self.state["awaiting_slot"] = "room_type"
+            else:
+                self.state["pending_intent"] = None
+                self.state["awaiting_slot"] = None
+
+        # STANDALONE BOOKING ID EXPRESS RULE
+        if booking_id and not self.state["active"]:
+            return self._handle_booking_id_action("status", booking_id)
 
         return None
 
@@ -721,7 +955,7 @@ if __name__ == "__main__":
 
 
     conversation = [
-        ("I want to book a deluxe room for 2 guests", "book_room"),
+        ("I want to book a deluxe room for 2 guests", "book_hotel"),
         ("My name is John Doe", None),
         ("2026-10-01", None),
         ("2026-10-05", None),

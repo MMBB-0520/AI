@@ -65,7 +65,6 @@ class TextPreprocessor:
         self.lemmatizer = WordNetLemmatizer()
         self.enable_spell_check = enable_spell_check
 
-        # Explicit common typos mapping for chatbot domains
         self.common_typos = {
             "helo": "hello",
             "hllo": "hello",
@@ -89,54 +88,6 @@ class TextPreprocessor:
             "locaton": "location"
         }
 
-        # Structured Domain Vocabularies for Proper Nouns and Hotel Concepts
-        self.domain_vocab = {
-            "hello", "hi", "hey", "booking", "book", "room", "price", "cost",
-            "checkin", "checkout", "wifi", "parking", "breakfast", "contact",
-            "cancel", "deluxe", "suite", "location", "status", "payment",
-            "king", "queen", "minibar", "jacuzzi", "lunch", "dinner",
-            "restaurant", "food", "reservation", "amenities", "pool", "view",
-            "guests", "person", "people", "night", "nights", "rate", "rates",
-            "modify", "change", "update", "deposit", "card", "cash", "reception",
-            "frontdesk", "service", "check_in", "check_out", "room_service", "free_wifi"
-        }
-
-        self.location_vocab = {
-            "bukit", "bintang", "kuala", "lumpur", "klcc", "petaling", "jaya",
-            "twin", "tower", "towers", "penang", "langkawi", "malaysia",
-            "selangor", "georgetown", "subang", "ttdi", "bangsar", "mont", "kiara",
-            "bukit_bintang", "kuala_lumpur", "petaling_jaya", "twin_towers"
-        }
-
-        self.hotel_vocab = {
-            "bookmate", "oriented", "resort", "standard", "deluxe", "family",
-            "ocean", "villa", "executive", "presidential"
-        }
-
-        self.brand_vocab = {
-            "agoda", "booking", "expedia", "trip", "hilton", "marriott",
-            "airbnb", "trivago", "klook", "grab", "traveloka"
-        }
-
-        # Build domain vocabulary from dataset for precision spell checking
-        self.vocab = set()
-        self.vocab.update(self.domain_vocab)
-        self.vocab.update(self.location_vocab)
-        self.vocab.update(self.hotel_vocab)
-        self.vocab.update(self.brand_vocab)
-
-        dataset_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "dataset", "intents.csv"))
-        if os.path.exists(dataset_path):
-            try:
-                df = pd.read_csv(dataset_path)
-                for t in df['text'].dropna():
-                    for w in str(t).lower().split():
-                        clean_w = re.sub(f"[{re.escape(string.punctuation)}]", "", w)
-                        if clean_w:
-                            self.vocab.add(clean_w)
-            except Exception:
-                pass
-
         # Compound domain phrases (prevent splitting by punctuation/tokenization)
         self.compound_phrases = {
             r"\bcheck[ -]in\b": "check_in",
@@ -157,6 +108,17 @@ class TextPreprocessor:
             r"\bkuala[ -]lumpur\b": "kuala_lumpur",
             r"\bpetaling[ -]jaya\b": "petaling_jaya",
             r"\btwin[ -]tower\b|\btwin[ -]towers\b": "twin_towers"
+        }
+
+        # Informal expression normalization
+        self.informal_expressions = {
+            r"\bwanna\b": "want to",
+            r"\bgonna\b": "going to",
+            r"\bgotta\b": "got to",
+            r"\blemme\b": "let me",
+            r"\bgimme\b": "give me",
+            r"\bkinda\b": "kind of",
+            r"\bsorta\b": "sort of"
         }
 
         # Spoken number word normalization (e.g. "two guests" -> "2 guests")
@@ -196,51 +158,6 @@ class TextPreprocessor:
             return wordnet.ADV
         else:
             return wordnet.NOUN
-
-    def _correct_word_spelling(self, word: str) -> str:
-        """
-        Domain-aware & Dictionary-based spell checking:
-        1. Explicit common typo dictionary match (`self.common_typos`).
-        2. Keep word if in domain vocabulary (`self.vocab`), short (len <= 2),
-           or valid English word in WordNet dictionary.
-        3. Strict edit-distance match (dist == 1) for unknown non-dictionary words against domain vocabulary.
-        4. No TextBlob fallback (prevents distorting out-of-vocabulary terms like 'lunch').
-        """
-        clean_word = word.strip(string.punctuation).lower()
-
-        if not clean_word or clean_word.isdigit() or "_" in clean_word:
-            return word
-
-        # 1. Check explicit typo dictionary
-        if clean_word in self.common_typos:
-            corrected = self.common_typos[clean_word]
-            return word.lower().replace(clean_word, corrected)
-
-        # 2. Keep if already in domain vocabulary or short word
-        if clean_word in self.vocab or len(clean_word) <= 2:
-            return word
-
-        # 3. Keep if valid English word in WordNet dictionary
-        try:
-            if wordnet.synsets(clean_word):
-                return word
-        except Exception:
-            pass
-
-        # 4. Strict edit distance match (distance == 1 only) against domain vocabulary
-        if len(clean_word) >= 4:
-            candidates = []
-            for target in self.vocab:
-                if abs(len(clean_word) - len(target)) <= 1:
-                    dist = edit_distance(clean_word, target)
-                    if dist == 1:
-                        candidates.append(target)
-
-            if len(candidates) == 1:
-                return word.lower().replace(clean_word, candidates[0])
-
-        # Return original word if no match (No TextBlob fallback)
-        return word
 
     def detect_and_mask_pii(self, text: str) -> tuple[str, dict]:
         """
@@ -292,6 +209,9 @@ class TextPreprocessor:
         for pattern, replacement in self.compound_phrases.items():
             text = re.sub(pattern, replacement, text, flags=re.IGNORECASE)
 
+        for pattern, replacement in self.informal_expressions.items():
+            text = re.sub(pattern, replacement, text, flags=re.IGNORECASE)
+
         for pattern, replacement in self.number_words.items():
             text = re.sub(pattern, replacement, text, flags=re.IGNORECASE)
 
@@ -299,11 +219,17 @@ class TextPreprocessor:
         if self.enable_spell_check:
             words = text.split()
             corrected_words = []
+
             for w in words:
-                if (w.startswith("[") and w.endswith("]")) or "_" in w:
-                    corrected_words.append(w)
+                clean_word = w.strip(string.punctuation).lower()
+
+                if clean_word in self.common_typos:
+                    corrected_words.append(
+                        self.common_typos[clean_word]
+                    )
                 else:
-                    corrected_words.append(self._correct_word_spelling(w))
+                    corrected_words.append(w)
+
             text = " ".join(corrected_words)
 
         # 4. Basic Cleaning (keep PII bracket tags intact)
@@ -395,19 +321,23 @@ def process_input(text: str) -> dict:
 
 if __name__ == "__main__":
     test_cases = [
-        "helo, I would like to book a room at BookMate near Bukit Bintang",
-        "I need a room with free wifi and room service for two guests",
-        "What is the check-in time and check out policy?",
-        "My email is john.doe@gmail.com, booking ID BK1234, and phone is +6012-3456789.",
-        "My card is 4532015112830366 (valid Luhn) and fake is 1234567890123456 (invalid Luhn)."
+        "I want to book a hotel for two nights",
+        "wanna check my invocies where could i do it",
+        "Can I cancel my hotel reservation?",
+        "What time is check in?",
+        "Can I bring my pet?",
+        "Do you have free parking?",
+        "I need to change my reservation",
+        "My email is john.doe@gmail.com and my phone is +6012-3456789"
     ]
 
-    print("=== Testing Domain-Aware Spelling & Enhanced NLP Preprocessing Pipeline ===")
-    for text in test_cases:
-        res = process_input(text)
-        print(f"\n[Original]   : {res['original_text']}")
-        print(f"[PII Masked] : {res['pii_masked_text']}")
-        print(f"[Detected PII]: {res['detected_pii']}")
-        print(f"[Normalized] : {res['normalized_text']}")
-        print(f"[Lemmatized] : {res['preprocessed_text']}")
+    print("=== BookMate Preprocessing Test ===")
 
+    for text in test_cases:
+        result = process_input(text)
+
+        print(f"\nOriginal: {result['original_text']}")
+        print(f"Masked: {result['pii_masked_text']}")
+        print(f"Normalized: {result['normalized_text']}")
+        print(f"Tokens: {result['tokens']}")
+        print(f"Lemmatized: {result['preprocessed_text']}")
