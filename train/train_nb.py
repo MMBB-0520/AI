@@ -73,7 +73,7 @@ def main():
     print(f"Total dataset rows: {len(df)}")
     
     # 2. Handle column name changes safely ('text' vs 'utterance')
-    text_col = 'utterance' if 'utterance' in df.columns else 'text'
+    text_col = 'instruction'
     intent_col = 'intent'
 
     print(f"Unique intents: {df[intent_col].nunique()}")
