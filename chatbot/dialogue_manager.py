@@ -188,12 +188,12 @@ class DialogueManager:
 
         return (
             f"📋 **Booking Details ({booking.get('booking_id')})**\n\n"
-            f"• **Guest Name**: {booking.get('name', 'N/A')}\n"
-            f"• **Room Type**: {booking.get('room', 'N/A')}\n"
-            f"• **Check-in**: {booking.get('check_in', 'N/A')}\n"
-            f"• **Check-out**: {booking.get('check_out', 'N/A')}\n"
-            f"• **Guests**: {booking.get('guests', 'N/A')}\n"
-            f"• **Status**: {emoji} {status}"
+            f"- **Guest Name** : {booking.get('name', 'N/A')}\n"
+            f"- **Room Type**  : {booking.get('room', 'N/A')}\n"
+            f"- **Check-in**   : {booking.get('check_in', 'N/A')}\n"
+            f"- **Check-out**  : {booking.get('check_out', 'N/A')}\n"
+            f"- **Guests**     : {booking.get('guests', 'N/A')}\n"
+            f"- **Status**     : {emoji} {status}"
         )
 
     def _format_invoice_details(self, booking):
@@ -215,15 +215,15 @@ class DialogueManager:
 
         return (
             f"🧾 **Official Tax Invoice ({b_id})**\n\n"
-            f"• **Guest Name**: {name}\n"
-            f"• **Room Reserved**: {room}\n"
-            f"• **Check-in / Check-out**: {check_in} - {check_out}\n"
-            f"• **Guests**: {guests}\n"
-            f"• **Room Rate**: {rate_str}/night\n"
-            f"• **Subtotal**: RM{total_price}\n"
-            f"• **SST Tax (6%)**: RM{tax}\n"
-            f"• **Grand Total Paid**: **RM{grand_total}**\n"
-            f"• **Payment Status**: ✅ Paid ({status})"
+            f"- **Guest Name**            : {name}\n"
+            f"- **Room Reserved**         : {room}\n"
+            f"- **Check-in / Check-out**  : {check_in} - {check_out}\n"
+            f"- **Guests**                : {guests}\n"
+            f"- **Room Rate**             : {rate_str}/night\n"
+            f"- **Subtotal**              : RM{total_price}\n"
+            f"- **SST Tax (6%)**          : RM{tax}\n"
+            f"- **Grand Total Paid**      : **RM{grand_total}**\n"
+            f"- **Payment Status**        : ✅ Paid ({status})"
         )
 
     # BOOKING VALIDATION
@@ -407,10 +407,10 @@ class DialogueManager:
             self.state["step"] = 5
             return (
                 "Which room type would you like?\n\n"
-                "• Standard Room\n"
-                "• Deluxe Room\n"
-                "• Family Suite\n"
-                "• Ocean Villa"
+                "- Standard Room\n"
+                "- Deluxe Room\n"
+                "- Family Suite\n"
+                "- Ocean Villa"
             )
 
         return self._create_booking()
@@ -435,12 +435,12 @@ class DialogueManager:
 
         reply = (
             f"✅ **Booking Confirmed!**\n\n"
-            f"• **Booking ID**: {booking_id}\n"
-            f"• **Name**: {booking['name']}\n"
-            f"• **Room**: {booking['room']}\n"
-            f"• **Check-in**: {booking['check_in']}\n"
-            f"• **Check-out**: {booking['check_out']}\n"
-            f"• **Guests**: {booking['guests']}\n\n"
+            f"- **Booking ID** : {booking_id}\n"
+            f"- **Name**       : {booking['name']}\n"
+            f"- **Room**       : {booking['room']}\n"
+            f"- **Check-in**   : {booking['check_in']}\n"
+            f"- **Check-out**  : {booking['check_out']}\n"
+            f"- **Guests**     : {booking['guests']}\n\n"
             f"Thank you for choosing **{HOTEL_NAME}**!"
         )
 

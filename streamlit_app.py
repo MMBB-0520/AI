@@ -29,52 +29,28 @@ with st.sidebar:
     st.header(f"🏨 {HOTEL_NAME}")
 
     st.write("BookMate Chatbot")
-
+    
+    model = "Support Vector Machine"
+    
     st.divider()
 
-    model = st.selectbox(
-        "Machine Learning Model",
-        [
-            "Support Vector Machine",
-            "Naive Bayes",
-            "Logistic Regression"
-        ]
-    )
-
-    show_debug = st.toggle(
-        "🔍 Developer Debug Mode",
-        value=False,
-        help="Show ML model, predicted intent, confidence %, and extracted entities."
-    )
-
-    st.divider()
-
-    st.write("Supported Services")
-    st.write("""
-    ✅ Book Room
-
-    ✅ Check Availability
-
-    ✅ Room Price
-
-    ✅ Breakfast
-
-    ✅ Parking
-
-    ✅ Hotel Facilities
-
-    ✅ Payment
-
-    ✅ Contact
-
-    ✅ Check-in / Check-out
-
-    ✅ Booking Status
-
-    ✅ Cancel Booking
-
-    ✅ Modify Booking
-    """)
+    st.markdown("**✨ Supported Services**")
+    
+    with st.expander("🛏️ Reservations", expanded=True):
+        st.markdown("""
+        - Book Room
+        - Check Booking Status
+        - Modify Booking
+        - Cancel Booking
+        """)
+        
+    with st.expander("🏨 Hotel Info & Services", expanded=True):
+        st.markdown("""
+        - Room Prices & Payment
+        - Facilities & Parking
+        - Breakfast & Dining
+        - Check-in / Check-out
+        """)
 
     st.divider()
 
@@ -90,7 +66,12 @@ with st.sidebar:
             del st.session_state.last_prediction
 
         st.rerun()
-
+        
+    show_debug = st.toggle(
+        "🔍 Developer Debug Mode",
+        value=False,
+        help="Show ML model, predicted intent, confidence %, and extracted entities."
+    )
 
 # INITIALIZE SESSION STATE
 if "messages" not in st.session_state:
