@@ -1,10 +1,15 @@
 """
-BookMate Chatbot - Preprocessing & NLP Pipeline
-===============================================
+BookMate Chatbot - Text Preprocessing Pipeline
+==============================================
 
 Pipeline Steps:
-1. Text Normalization: Lowercasing, Domain & Common-Typo Spelling Correction, Basic Cleaning
-2. PII Detection & Masking: Detects & masks Email, Credit Card, IC/ID, and Phone numbers
+1. PII Detection & Masking: Detects & masks Email, Credit Card, IC/ID, and Phone numbers
+2. Text Normalization:
+   - Repeated Character Reduction (e.g. 'helloooo' -> 'hello')
+   - Contraction Expansion (e.g. "can't" -> "cannot", "I'd" -> "I would")
+   - Chat Slang & Abbreviation Expansion (e.g. 'pls' -> 'please', 'thx' -> 'thank you')
+   - Domain-Specific Spelling Correction (Hotel, Room, Facilities, Cancellation)
+   - Compound Phrase & Number Word Binding
 3. Tokenization: Word tokenization
 4. Lemmatization: Context-aware lemmatization using POS-tagged WordNetLemmatizer
 """
@@ -17,7 +22,6 @@ import nltk
 from nltk.tokenize import word_tokenize
 from nltk.stem import WordNetLemmatizer
 from nltk.corpus import wordnet
-from nltk.metrics.distance import edit_distance
 
 # Auto-download required NLTK resources silently
 REQUIRED_NLTK_RESOURCES = [
@@ -26,7 +30,8 @@ REQUIRED_NLTK_RESOURCES = [
     ("corpora/wordnet", "wordnet"),
     ("corpora/omw-1.4", "omw-1.4"),
     ("taggers/averaged_perceptron_tagger_eng", "averaged_perceptron_tagger_eng"),
-    ("taggers/averaged_perceptron_tagger", "averaged_perceptron_tagger")
+    ("taggers/averaged_perceptron_tagger", "averaged_perceptron_tagger"),
+    ("sentiment/vader_lexicon", "vader_lexicon")
 ]
 
 for res_path, res_name in REQUIRED_NLTK_RESOURCES:
@@ -65,31 +70,109 @@ class TextPreprocessor:
         self.lemmatizer = WordNetLemmatizer()
         self.enable_spell_check = enable_spell_check
 
-        self.common_typos = {
-            "helo": "hello",
-            "hllo": "hello",
-            "hallo": "hello",
-            "helooo": "hello",
-            "hiii": "hi",
-            "heyya": "hey",
-            "bookin": "booking",
-            "bok": "book",
-            "prce": "price",
-            "pric": "price",
-            "chkin": "checkin",
-            "chkout": "checkout",
-            "cancle": "cancel",
-            "reserv": "reserve",
-            "resrvation": "reservation",
-            "delux": "deluxe",
-            "availble": "available",
-            "avialable": "available",
-            "paymnt": "payment",
-            "locaton": "location"
+        # 1. Contraction Expansion Patterns
+        self.contractions = {
+            r"\bcan'?t\b": "cannot",
+            r"\bwon'?t\b": "will not",
+            r"\bshan'?t\b": "shall not",
+            r"\bshouldn'?t\b": "should not",
+            r"\bcouldn'?t\b": "could not",
+            r"\bwouldn'?t\b": "would not",
+            r"\bdon'?t\b": "do not",
+            r"\bdoesn'?t\b": "does not",
+            r"\bdidn'?t\b": "did not",
+            r"\bisn'?t\b": "is not",
+            r"\baren'?t\b": "are not",
+            r"\bwasn'?t\b": "was not",
+            r"\bweren'?t\b": "were not",
+            r"\bhaven'?t\b": "have not",
+            r"\bhasn'?t\b": "has not",
+            r"\bhadn'?t\b": "had not",
+            r"\bi'?m\b": "i am",
+            r"\byou'?re\b": "you are",
+            r"\bwe'?re\b": "we are",
+            r"\bthey'?re\b": "they are",
+            r"\bit'?s\b": "it is",
+            r"\bthat'?s\b": "that is",
+            r"\bwhat'?s\b": "what is",
+            r"\bthere'?s\b": "there is",
+            r"\bwho'?s\b": "who is",
+            r"\bhow'?s\b": "how is",
+            r"\bi'?d\b": "i would",
+            r"\byou'?d\b": "you would",
+            r"\bhe'?d\b": "he would",
+            r"\bshe'?d\b": "she would",
+            r"\bwe'?d\b": "we would",
+            r"\bthey'?d\b": "they would",
+            r"\bi'?ll\b": "i will",
+            r"\byou'?ll\b": "you will",
+            r"\bhe'?ll\b": "he will",
+            r"\bshe'?ll\b": "she will",
+            r"\bwe'?ll\b": "we will",
+            r"\bthey'?ll\b": "they will",
+            r"\bi'?ve\b": "i have",
+            r"\byou'?ve\b": "you have",
+            r"\bwe'?ve\b": "we have",
+            r"\bthey'?ve\b": "they have",
+            r"\blet'?s\b": "let us"
         }
 
-        # Compound domain phrases (prevent splitting by punctuation/tokenization)
+        # 2. Chat Slang & Informal Expressions
+        self.chat_slang = {
+            r"\bpls\b|\bplz\b": "please",
+            r"\bthx\b|\bty\b|\btq\b|\bthanx\b": "thank you",
+            r"\basap\b": "as soon as possible",
+            r"\bpromo\b": "promotion",
+            r"\binfo\b": "information",
+            r"\bpic\b|\bpics\b": "picture",
+            r"\bappt\b": "appointment",
+            r"\bidk\b": "i do not know",
+            r"\brsv\b": "reserve",
+            r"\brsvp\b": "reserve",
+            r"\bwanna\b": "want to",
+            r"\bgonna\b": "going to",
+            r"\bgotta\b": "got to",
+            r"\blemme\b": "let me",
+            r"\bgimme\b": "give me",
+            r"\bkinda\b": "kind of",
+            r"\bsorta\b": "sort of"
+        }
+
+        # 3. Expanded Hotel Domain Typos
+        self.common_typos = {
+            # Greetings
+            "helo": "hello", "hllo": "hello", "hallo": "hello", "helooo": "hello", "hiii": "hi", "heyya": "hey",
+            # Booking & Reserving
+            "bookin": "booking", "bok": "book", "boking": "booking", "reserv": "reserve", "resrv": "reserve",
+            "resrvation": "reservation", "reseveration": "reservation", "reseravtion": "reservation",
+            # Pricing & Rooms
+            "prce": "price", "pric": "price", "prces": "prices", "delux": "deluxe", "dlx": "deluxe",
+            "suit": "suite", "vila": "villa", "stadard": "standard", "standerd": "standard",
+            "accomodation": "accommodation", "acommodation": "accommodation", "availble": "available",
+            "avialable": "available", "availibility": "availability", "availablity": "availability",
+            # Dates & Times
+            "chkin": "checkin", "chkout": "checkout", "checkn": "checkin", "chekin": "checkin",
+            "chekout": "checkout", "tomorow": "tomorrow", "tmrw": "tomorrow", "tonite": "tonight",
+            # Facilities & Services
+            "swiming": "swimming", "swimingpool": "swimming pool", "facilites": "facilities",
+            "facilties": "facilities", "fcilities": "facilities", "restaraunt": "restaurant",
+            "resturant": "restaurant", "restraunt": "restaurant", "breakfst": "breakfast",
+            "brekfast": "breakfast", "brakefast": "breakfast", "parkng": "parking",
+            "shutle": "shuttle", "shytle": "shuttle", "lugage": "luggage", "bagage": "baggage",
+            # Cancellation & Finance
+            "cancle": "cancel", "cnacel": "cancel", "cancelation": "cancellation", "cancelling": "canceling",
+            "invoce": "invoice", "invocies": "invoices", "reciept": "receipt", "recipt": "receipt",
+            "paymnt": "payment", "paymet": "payment", "refnd": "refund",
+            # Communication & Local
+            "complante": "complaint", "complain": "complaint", "locaton": "location", "adress": "address",
+            "servise": "service", "custumer": "customer"
+        }
+
+        # 4. Compound Domain Phrases (Preserves key multi-word phrases)
         self.compound_phrases = {
+            r"\boriented[ -]resort\b": "oriented_resort",
+            r"\bpantai[ -]cenang\b": "pantai_cenang",
+            r"\blangkawi\b": "langkawi",
             r"\bcheck[ -]in\b": "check_in",
             r"\bcheck[ -]out\b": "check_out",
             r"\broom[ -]service\b": "room_service",
@@ -104,24 +187,10 @@ class TextPreprocessor:
             r"\bqueen[ -]bed\b": "queen_bed",
             r"\bfront[ -]desk\b": "front_desk",
             r"\bsea[ -]view\b": "sea_view",
-            r"\bbukit[ -]bintang\b": "bukit_bintang",
-            r"\bkuala[ -]lumpur\b": "kuala_lumpur",
-            r"\bpetaling[ -]jaya\b": "petaling_jaya",
-            r"\btwin[ -]tower\b|\btwin[ -]towers\b": "twin_towers"
+            r"\bduitnow[ -]?qr\b": "duitnow_qr"
         }
 
-        # Informal expression normalization
-        self.informal_expressions = {
-            r"\bwanna\b": "want to",
-            r"\bgonna\b": "going to",
-            r"\bgotta\b": "got to",
-            r"\blemme\b": "let me",
-            r"\bgimme\b": "give me",
-            r"\bkinda\b": "kind of",
-            r"\bsorta\b": "sort of"
-        }
-
-        # Spoken number word normalization (e.g. "two guests" -> "2 guests")
+        # 5. Spoken Number Words
         self.number_words = {
             r"\bone\b": "1",
             r"\btwo\b": "2",
@@ -135,7 +204,7 @@ class TextPreprocessor:
             r"\bten\b": "10"
         }
 
-        # PII Regex Patterns (ordered by specificity)
+        # 6. PII Regex Patterns
         self.pii_patterns = [
             ("CREDIT_CARD", r"\b(?:\d[ -]*?){13,19}\b"),
             ("EMAIL", r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}"),
@@ -159,13 +228,13 @@ class TextPreprocessor:
         else:
             return wordnet.NOUN
 
+    def _normalize_elongations(self, text: str) -> str:
+        """Reduce 3+ repeated characters (e.g. 'helloooo' -> 'hello', 'plssss' -> 'pls')."""
+        return re.sub(r'([a-zA-Z])\1{2,}', r'\1\1', text)
+
     def detect_and_mask_pii(self, text: str) -> tuple[str, dict]:
         """
         Detect and mask Personally Identifiable Information (PII).
-
-        Returns:
-            masked_text (str): Text with PII replaced by tokens (e.g., [EMAIL]).
-            detected_pii (dict): Dictionary mapping PII types to matched values.
         """
         masked_text = text
         detected_pii = {}
@@ -198,68 +267,69 @@ class TextPreprocessor:
         """
         Text Normalization:
         - Lowercasing
-        - Compound Phrase & Spoken Number Normalization
+        - Repeated Character Reduction
+        - Contraction Expansion
+        - Slang / Abbreviation Normalization
+        - Compound Phrase & Number Word Binding
         - Spelling Correction (Domain & Typo Aware)
-        - Basic Cleaning (removing extra punctuation/spaces while preserving compounds & PII)
+        - Basic Cleaning
         """
         # 1. Lowercasing
         text = text.lower()
 
-        # 2. Compound Phrase & Spoken Number Normalization
-        for pattern, replacement in self.compound_phrases.items():
+        # 2. Repeated character reduction (e.g. 'helooo' -> 'heloo')
+        text = self._normalize_elongations(text)
+
+        # 3. Contraction Expansion (e.g. "can't" -> "cannot", "i'm" -> "i am")
+        for pattern, replacement in self.contractions.items():
             text = re.sub(pattern, replacement, text, flags=re.IGNORECASE)
 
-        for pattern, replacement in self.informal_expressions.items():
+        # 4. Chat Slang & Informal Expression Normalization
+        for pattern, replacement in self.chat_slang.items():
+            text = re.sub(pattern, replacement, text, flags=re.IGNORECASE)
+
+        # 5. Compound Domain Phrases & Numbers
+        for pattern, replacement in self.compound_phrases.items():
             text = re.sub(pattern, replacement, text, flags=re.IGNORECASE)
 
         for pattern, replacement in self.number_words.items():
             text = re.sub(pattern, replacement, text, flags=re.IGNORECASE)
 
-        # 3. Spelling Correction
+        # 6. Spelling Correction
         if self.enable_spell_check:
             words = text.split()
             corrected_words = []
-
             for w in words:
                 clean_word = w.strip(string.punctuation).lower()
-
                 if clean_word in self.common_typos:
-                    corrected_words.append(
-                        self.common_typos[clean_word]
-                    )
+                    corrected_words.append(self.common_typos[clean_word])
                 else:
                     corrected_words.append(w)
-
             text = " ".join(corrected_words)
 
-        # 4. Basic Cleaning (keep PII bracket tags intact)
+        # 7. Basic Cleaning (preserving PII tokens and underscores)
         pii_tokens = re.findall(r"\[[A-Z_]+\]", text)
         for i, tag in enumerate(pii_tokens):
             text = text.replace(tag, f" PII_TOKEN_{i} ")
 
-        # Remove punctuation except underscores (preserves check_in, room_service, etc.)
         text = re.sub(r"[^\w\s_]", " ", text)
 
-        # Restore PII tokens
         for i, tag in enumerate(pii_tokens):
             clean_tag_name = tag.strip("[]").lower()
             text = text.replace(f" PII_TOKEN_{i} ", f" {clean_tag_name} ")
 
-        # Clean whitespace
         text = re.sub(r"\s+", " ", text).strip()
-
         return text
 
-
     def tokenize(self, text: str) -> list[str]:
-        """Tokenize normalized text into a list of word tokens."""
+        """Tokenize normalized text into word tokens."""
         try:
             return word_tokenize(text)
         except Exception:
             return text.split()
 
     def lemmatize(self, tokens: list[str]) -> list[str]:
-        """Lemmatize word tokens using context POS tagging and WordNetLemmatizer."""
+        """Lemmatize tokens using context POS tagging and WordNet."""
         try:
             pos_tags = nltk.pos_tag(tokens)
             lemmatized = [
@@ -273,16 +343,7 @@ class TextPreprocessor:
 
     def process(self, text: str) -> dict:
         """
-        Execute full NLP Preprocessing Pipeline.
-
-        Returns dict:
-        - original_text
-        - pii_masked_text
-        - detected_pii
-        - normalized_text
-        - tokens
-        - lemmatized_tokens
-        - preprocessed_text (string ready for ML intent classification)
+        Execute full Text Preprocessing Pipeline.
         """
         masked_text, detected_pii = self.detect_and_mask_pii(text)
         normalized_text = self.normalize_text(masked_text)
@@ -301,43 +362,19 @@ class TextPreprocessor:
         }
 
 
-# Default global instance (Spell checking enabled by default)
+# Default global instance
 _default_preprocessor = TextPreprocessor(enable_spell_check=True)
 
 
 def preprocess_text(text: str) -> str:
     """
-    Convenience function returning preprocessed string for model training & prediction.
+    Convenience function returning preprocessed string for ML training and inference.
     """
     return _default_preprocessor.process(text)["preprocessed_text"]
 
 
 def process_input(text: str) -> dict:
     """
-    Convenience function returning detailed result dict of full pipeline.
+    Convenience function returning detailed result dict of full preprocessing pipeline.
     """
     return _default_preprocessor.process(text)
-
-
-if __name__ == "__main__":
-    test_cases = [
-        "I want to book a hotel for two nights",
-        "wanna check my invocies where could i do it",
-        "Can I cancel my hotel reservation?",
-        "What time is check in?",
-        "Can I bring my pet?",
-        "Do you have free parking?",
-        "I need to change my reservation",
-        "My email is john.doe@gmail.com and my phone is +6012-3456789"
-    ]
-
-    print("=== BookMate Preprocessing Test ===")
-
-    for text in test_cases:
-        result = process_input(text)
-
-        print(f"\nOriginal: {result['original_text']}")
-        print(f"Masked: {result['pii_masked_text']}")
-        print(f"Normalized: {result['normalized_text']}")
-        print(f"Tokens: {result['tokens']}")
-        print(f"Lemmatized: {result['preprocessed_text']}")
