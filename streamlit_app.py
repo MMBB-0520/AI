@@ -92,35 +92,6 @@ with st.sidebar:
         - Complimentary Parking & Airport Shuttle
         """)
 
-    with st.expander("📊 Model Comparison & Evaluation", expanded=False):
-        st.markdown("""
-        | Model | Acc | Macro F1 |
-        | :--- | :--- | :---: |
-        | **SVM** | **98.88%** | **98.89%** |
-        | **LR** | **98.82%** | **98.83%** |
-        | **NB** | **98.64%** | **98.64%** |
-        
-        - **BLEU Relevancy**: 99.20%
-        - **Intents Covered**: 25 Categories
-        """)
-
-    # Interactive User Satisfaction Rating (Requirement f.iii & g.iii)
-    if "user_ratings" not in st.session_state:
-        st.session_state.user_ratings = [5, 5, 4, 5]
-
-    with st.expander("⭐ Feedback & Satisfaction (CSAT)", expanded=False):
-        ratings = st.session_state.user_ratings
-        avg_rating = sum(ratings) / len(ratings) if ratings else 5.0
-        csat_score = (sum(1 for r in ratings if r >= 4) / len(ratings) * 100) if ratings else 100.0
-
-        st.metric(label="Average Rating", value=f"{avg_rating:.1f} / 5.0 ⭐", delta=f"{csat_score:.0f}% CSAT")
-
-        feedback_val = st.slider("Rate your experience:", min_value=1, max_value=5, value=5, step=1)
-        if st.button("Submit Rating", width="stretch"):
-            st.session_state.user_ratings.append(feedback_val)
-            st.success("Thank you for your feedback!")
-            st.rerun()
-
     if st.button("🗑 Clear Chat", width="stretch"):
         st.session_state.messages = []
         if "dialogue_manager" in st.session_state:
@@ -275,6 +246,35 @@ with st.sidebar:
         value=False,
         help="Show ML model, predicted intent, confidence %, and extracted entities."
     )
+    
+    with st.expander("📊 Model Comparison & Evaluation", expanded=False):
+        st.markdown("""
+        | Model | Acc | Macro F1 |
+        | :--- | :--- | :---: |
+        | **SVM** | **98.88%** | **98.89%** |
+        | **LR** | **98.82%** | **98.83%** |
+        | **NB** | **98.64%** | **98.64%** |
+        
+        - **BLEU Relevancy**: 99.20%
+        - **Intents Covered**: 25 Categories
+        """)
+
+    # Interactive User Satisfaction Rating (Requirement f.iii & g.iii)
+    if "user_ratings" not in st.session_state:
+        st.session_state.user_ratings = [5, 5, 4, 5]
+
+    with st.expander("⭐ Feedback & Satisfaction (CSAT)", expanded=False):
+        ratings = st.session_state.user_ratings
+        avg_rating = sum(ratings) / len(ratings) if ratings else 5.0
+        csat_score = (sum(1 for r in ratings if r >= 4) / len(ratings) * 100) if ratings else 100.0
+
+        st.metric(label="Average Rating", value=f"{avg_rating:.1f} / 5.0 ⭐", delta=f"{csat_score:.0f}% CSAT")
+
+        feedback_val = st.slider("Rate your experience:", min_value=1, max_value=5, value=5, step=1)
+        if st.button("Submit Rating", width="stretch"):
+            st.session_state.user_ratings.append(feedback_val)
+            st.success("Thank you for your feedback!")
+            st.rerun()
 
 # INITIALIZE SESSION STATE
 if "messages" not in st.session_state:
