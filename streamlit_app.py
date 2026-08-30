@@ -44,35 +44,7 @@ with st.sidebar:
 
     st.header(f"🏨 {HOTEL_NAME}")
     st.caption("BookMate Intelligent Concierge")
-
-    # MODEL SELECTOR (Member-specific Chatbot Models)
-    model_map = {
-        "Support Vector Machine (SVM)": "Support Vector Machine",
-        "Logistic Regression (LR)": "Logistic Regression",
-        "Multinomial Naive Bayes (NB)": "Naive Bayes"
-    }
-
-    selected_model_option = st.selectbox(
-        "🤖 Select Chatbot Model",
-        options=list(model_map.keys()),
-        index=0,
-        help="Switch between distinct ML models developed by each group member."
-    )
-    model = model_map[selected_model_option]
-
-    # LOAD / REFRESH INTENT PREDICTOR IN SESSION STATE
-    if (
-        "predictor" not in st.session_state
-        or st.session_state.get("current_model") != model
-        or not hasattr(st.session_state.get("predictor"), "get_learned_memory")
-    ):
-        st.session_state.predictor = IntentPredictor(model)
-        st.session_state.current_model = model
-
-    predictor = st.session_state.predictor
-
-    st.divider()
-
+    
     st.markdown("**✨ Supported Services**")
     
     with st.expander("🛏️ Reservations", expanded=False):
@@ -238,6 +210,33 @@ with st.sidebar:
                 """,
                 unsafe_allow_html=True
             )
+
+    st.divider()
+    # MODEL SELECTOR (Member-specific Chatbot Models)
+    model_map = {
+        "Support Vector Machine (SVM)": "Support Vector Machine",
+        "Logistic Regression (LR)": "Logistic Regression",
+        "Multinomial Naive Bayes (NB)": "Naive Bayes"
+    }
+
+    selected_model_option = st.selectbox(
+        "🤖 Select Chatbot Model",
+        options=list(model_map.keys()),
+        index=0,
+        help="Switch between distinct ML models developed by each group member."
+    )
+    model = model_map[selected_model_option]
+
+    # LOAD / REFRESH INTENT PREDICTOR IN SESSION STATE
+    if (
+        "predictor" not in st.session_state
+        or st.session_state.get("current_model") != model
+        or not hasattr(st.session_state.get("predictor"), "get_learned_memory")
+    ):
+        st.session_state.predictor = IntentPredictor(model)
+        st.session_state.current_model = model
+
+    predictor = st.session_state.predictor
 
     st.divider()
 

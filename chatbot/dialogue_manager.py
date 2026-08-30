@@ -1146,6 +1146,14 @@ class DialogueManager:
                     f"Please enter the correct registered **Contact Phone Number** to proceed, or type **Keep** to retain your booking."
                 )
 
+        # ACTIVE ROOM BOOKING WIZARD IN PROGRESS
+        if self.state["active"] and self.state["action"] == "book":
+            return self._handle_active_booking(
+                user_input,
+                entities,
+                intent=intent
+            )
+
         # CANCEL BOOKING
         if intent == "cancel_hotel_reservation":
             target_identifier = booking_id or entities.get("phone")

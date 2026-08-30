@@ -222,5 +222,19 @@
         "remaining_balance": "RM890",
         "total_amount": "RM1187",
         "status": "Confirmed"
+    },
+    {
+        "booking_id": "BK8753",
+        "name": "Hu Qiao Feng",
+        "phone": "0123456789",
+        "room": "Deluxe Room",
+        "check_in": "2026-10-01",
+        "check_out": "2026-10-04",
+        "guests": 2,
+        "nights": 3,
+        "deposit_paid": "RM297",
+        "remaining_balance": "RM593",
+        "total_amount": "RM890",
+        "status": "Confirmed"
     }
 ]
