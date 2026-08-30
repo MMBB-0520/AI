@@ -1,140 +1,131 @@
 """
-train_model.py
-----------------
-Trains a Multinomial Naive Bayes classifier to recognise user intents
-for the Hotel Booking Chatbot.
+train_nb.py
+-----------
+Trains a tuned Multinomial Naive Bayes (NB) classifier to recognize user intents 
+for the BookMate Hotel Booking Chatbot using GridSearchCV.
 """
-
 import sys
 import os
 import pandas as pd
 import joblib
 import matplotlib.pyplot as plt
-
-from sklearn.model_selection import train_test_split, StratifiedKFold, cross_val_score
+from sklearn.model_selection import train_test_split, GridSearchCV
 from sklearn.preprocessing import LabelEncoder
-from sklearn.feature_extraction.text import CountVectorizer
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.pipeline import Pipeline
 from sklearn.naive_bayes import MultinomialNB
 from sklearn.metrics import (
-    accuracy_score,
-    precision_score,
-    recall_score,
-    f1_score,
-    confusion_matrix,
-    classification_report,
-    ConfusionMatrixDisplay
+    accuracy_score, precision_score, recall_score, f1_score,
+    confusion_matrix, classification_report, ConfusionMatrixDisplay
 )
 
-# Setup paths dynamically so it doesn't break depending on where you run it
-CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
-PROJECT_ROOT = os.path.abspath(os.path.join(CURRENT_DIR, ".."))
+# PROJECT PATH
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if PROJECT_ROOT not in sys.path:
     sys.path.append(PROJECT_ROOT)
+from chatbot.preprocessing import preprocess_text
 
-# Import preprocessing (with fallback in case they updated the preprocessing script structure)
-try:
-    from chatbot.preprocessing import preprocess_text
-except ImportError:
-    from chatbot.preprocessing import TextPreprocessor
-    preprocessor = TextPreprocessor()
-    preprocess_text = preprocessor.process
-
-# Model save paths
-MODEL_PATH = os.path.join(PROJECT_ROOT, "models", "nb.pkl")
-VECTORIZER_PATH = os.path.join(PROJECT_ROOT, "models", "nb_vectorizer.pkl")
-ENCODER_PATH = os.path.join(PROJECT_ROOT, "models", "nb_label_encoder.pkl")
-CM_PATH = os.path.join(PROJECT_ROOT, "models", "nb_confusion_matrix.png")
-
+# PATH CONFIGURATION
+DATASET_PATH = os.path.join(PROJECT_ROOT, "dataset", "bitext-hospitality-llm-chatbot-training-dataset.csv")
+MODEL_DIR = os.path.join(PROJECT_ROOT, "models")
+MODEL_PATH = os.path.join(MODEL_DIR, "nb.pkl")
+VECTORIZER_PATH = os.path.join(MODEL_DIR, "nb_vectorizer.pkl")
+ENCODER_PATH = os.path.join(MODEL_DIR, "nb_label_encoder.pkl")
+CM_PATH = os.path.join(MODEL_DIR, "nb_confusion_matrix.png")
 
 def main():
-    print("========== Loading Dataset (Naive Bayes) ==========")
-    
-    # 1. Dynamic Dataset Loading (Bulletproof against name changes)
-    dataset_dir = os.path.join(PROJECT_ROOT, "dataset")
-    possible_datasets = [
-        "bitext-hospitality-llm-chatbot-training-dataset.csv",
-        "hotel_booking.csv",
-        "intents.csv"
-    ]
-    
-    dataset_path = None
-    for file in possible_datasets:
-        path = os.path.join(dataset_dir, file)
-        if os.path.exists(path):
-            dataset_path = path
-            break
-            
-    if not dataset_path:
-        raise FileNotFoundError("Could not find any dataset in the /dataset/ folder!")
-        
-    print(f"Loaded dataset: {os.path.basename(dataset_path)}")
-    df = pd.read_csv(dataset_path)
+    print("=" * 60)
+    print("Loading Bitext Hospitality Dataset & Training Optimized Naive Bayes")
+    print("=" * 60)
 
-    print(f"Total dataset rows: {len(df)}")
+    if not os.path.exists(DATASET_PATH):
+        raise FileNotFoundError(f"Dataset not found:\n{DATASET_PATH}")
+    os.makedirs(MODEL_DIR, exist_ok=True)
+
+    df = pd.read_csv(DATASET_PATH).dropna(subset=["instruction", "intent"]).copy()
     
-    # 2. Handle column name changes safely ('text' vs 'utterance')
-    text_col = 'instruction'
-    intent_col = 'intent'
-
-    print(f"Unique intents: {df[intent_col].nunique()}")
-
-    # Apply preprocessing pipeline
-    print("Applying NLP preprocessing (normalization, tokenization, lemmatization)...")
-    X_raw = df[text_col].astype(str)
-    X_cleaned = X_raw.apply(preprocess_text)
-    y_raw = df[intent_col]
+    X_raw = df["instruction"].astype(str)
+    y_raw = df["intent"].astype(str)
 
     label_encoder = LabelEncoder()
     y = label_encoder.fit_transform(y_raw)
 
-    vectorizer = CountVectorizer(ngram_range=(1, 2))
-    X = vectorizer.fit_transform(X_cleaned)
-
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.20, random_state=42, stratify=y
+    X_train_raw, X_test_raw, y_train, y_test = train_test_split(
+        X_raw, y, test_size=0.20, random_state=42, stratify=y
     )
 
-    print("Training Multinomial Naive Bayes Model...")
-    nb_model = MultinomialNB(alpha=0.1)
-    nb_model.fit(X_train, y_train)
+    print(f"Total rows: {len(df)} | Unique intents: {len(label_encoder.classes_)}")
+    print(f"Training samples: {len(X_train_raw)} | Testing samples: {len(X_test_raw)}")
 
-    # 5-fold Stratified Cross Validation
-    skf = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
-    cv_scores = cross_val_score(MultinomialNB(alpha=0.1), X, y, cv=skf)
-    print(f"5-fold CV Accuracy: {cv_scores.mean():.4f} (+/- {cv_scores.std():.4f})")
+    print("\nApplying NLP Preprocessing...")
+    X_train_cleaned = X_train_raw.apply(preprocess_text)
+    X_test_cleaned = X_test_raw.apply(preprocess_text)
 
-    y_pred = nb_model.predict(X_test)
+    # 1. Build Pipeline with TfidfVectorizer & MultinomialNB
+    pipeline = Pipeline([
+        ('vectorizer', TfidfVectorizer(ngram_range=(1, 2), min_df=2, max_df=0.95, sublinear_tf=True)),
+        ('classifier', MultinomialNB())
+    ])
 
-    accuracy = accuracy_score(y_test, y_pred)
-    precision = precision_score(y_test, y_pred, average="macro", zero_division=0)
-    recall = recall_score(y_test, y_pred, average="macro", zero_division=0)
-    f1 = f1_score(y_test, y_pred, average="macro", zero_division=0)
+    # 2. Hyperparameter Grid
+    param_grid = {
+        'classifier__alpha': [0.01, 0.05, 0.1, 0.5, 1.0]
+    }
 
-    print("\n========== Evaluation Results (Naive Bayes) ==========")
-    print(f"Accuracy  : {accuracy:.4f}")
-    print(f"Precision : {precision:.4f}")
-    print(f"Recall    : {recall:.4f}")
-    print(f"F1 Score  : {f1:.4f}")
+    # 3. GridSearchCV for Optimization
+    print("\nRunning GridSearchCV for Naive Bayes...")
+    grid_search = GridSearchCV(pipeline, param_grid, cv=5, scoring='f1_macro', n_jobs=-1)
+    grid_search.fit(X_train_cleaned, y_train)
 
-    print("\n========== Classification Report ==========")
+    print(f"Best Parameters: {grid_search.best_params_}")
+    
+    # Extract the best model and vectorizer from winning pipeline
+    best_pipeline = grid_search.best_estimator_
+    best_vectorizer = best_pipeline.named_steps['vectorizer']
+    best_classifier = best_pipeline.named_steps['classifier']
+
+    print("\nGenerating predictions on Test Set...")
+    X_test = best_vectorizer.transform(X_test_cleaned)
+    y_pred = best_classifier.predict(X_test)
+
+    # Evaluation
+    print("\n" + "=" * 60)
+    print("Naive Bayes Evaluation Results")
+    print("=" * 60)
+    print(f"Accuracy  : {accuracy_score(y_test, y_pred):.4f}")
+    print(f"Precision : {precision_score(y_test, y_pred, average='macro', zero_division=0):.4f}")
+    print(f"Recall    : {recall_score(y_test, y_pred, average='macro', zero_division=0):.4f}")
+    print(f"F1 Score  : {f1_score(y_test, y_pred, average='macro', zero_division=0):.4f}")
+
+    print("\nClassification Report:")
     print(classification_report(y_test, y_pred, target_names=label_encoder.classes_, zero_division=0))
 
-    # Confusion Matrix
-    cm = confusion_matrix(y_test, y_pred)
-    disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=label_encoder.classes_)
-    fig, ax = plt.subplots(figsize=(10, 8))
-    disp.plot(ax=ax, xticks_rotation=45, cmap="Blues")
-    plt.title("Naive Bayes Intent Classification - Confusion Matrix")
-    plt.tight_layout()
-    
-    os.makedirs(os.path.dirname(CM_PATH), exist_ok=True)
-    plt.savefig(CM_PATH)
-
-    print("\nSaving trained Naive Bayes model & preprocessors...")
-    joblib.dump(nb_model, MODEL_PATH)
-    joblib.dump(vectorizer, VECTORIZER_PATH)
+    # Save artifacts
+    print("\nSaving Trained Naive Bayes Model...")
+    joblib.dump(best_classifier, MODEL_PATH)
+    joblib.dump(best_vectorizer, VECTORIZER_PATH)
     joblib.dump(label_encoder, ENCODER_PATH)
-    print("Naive Bayes Model trained and saved successfully!")
+    print(f"Model saved      : {MODEL_PATH}")
+    print(f"Vectorizer saved : {VECTORIZER_PATH}")
+    print(f"Encoder saved    : {ENCODER_PATH}")
+
+    # Confusion Matrix
+    print("\nGenerating confusion matrix...")
+    cm = confusion_matrix(y_test, y_pred)
+    fig, ax = plt.subplots(figsize=(16, 14))
+    disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=label_encoder.classes_)
+    disp.plot(ax=ax, xticks_rotation=90, cmap="Blues", colorbar=False, values_format='d')
+    plt.title("Naive Bayes Intent Classification - Confusion Matrix", fontsize=16, pad=20, fontweight='bold')
+    plt.xlabel('Predicted Intent', fontsize=13, labelpad=10)
+    plt.ylabel('True Intent', fontsize=13, labelpad=10)
+    plt.xticks(fontsize=10)
+    plt.yticks(fontsize=10)
+    plt.tight_layout()
+    plt.savefig(CM_PATH, dpi=300)
+    plt.close()
+    print(f"Confusion matrix saved to: {CM_PATH}")
+
+    print("\nNaive Bayes training completed successfully!")
 
 if __name__ == "__main__":
     main()

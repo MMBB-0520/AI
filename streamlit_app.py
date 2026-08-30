@@ -9,7 +9,7 @@ from chatbot.sentiment_analyzer import analyze_sentiment
 from chatbot.entity_extractor import extract_entities
 from chatbot.intent_classifier import IntentPredictor
 from chatbot.dialogue_manager import DialogueManager
-from chatbot.response import get_response, generate_fallback_response, is_pure_greeting, HUMAN_INTENT_NAMES
+from chatbot.response import get_response, generate_fallback_response
 
 
 # CONFIGURATION
