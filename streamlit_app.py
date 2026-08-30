@@ -231,7 +231,6 @@ with st.sidebar:
     if (
         "predictor" not in st.session_state
         or st.session_state.get("current_model") != model
-        or not hasattr(st.session_state.get("predictor"), "get_learned_memory")
     ):
         st.session_state.predictor = IntentPredictor(model)
         st.session_state.current_model = model
