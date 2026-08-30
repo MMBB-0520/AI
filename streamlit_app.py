@@ -47,7 +47,7 @@ with st.sidebar:
     
     st.markdown("**✨ Supported Services**")
     
-    with st.expander("🛏️ Reservations", expanded=False):
+    with st.expander("🛏️ Reservations", expanded=True):
         st.markdown("""
         - Book Room (1-Night Deposit)
         - Check Booking Status
@@ -55,7 +55,7 @@ with st.sidebar:
         - Invoices & Tax Receipts
         """)
         
-    with st.expander("🏨 Hotel Info & Services", expanded=False):
+    with st.expander("🏨 Hotel Info & Services", expanded=True):
         st.markdown("""
         - Room Prices & Recommendations
         - Resort Facilities & Operating Hours

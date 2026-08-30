@@ -10,7 +10,7 @@
         "deposit_paid": "RM225",
         "remaining_balance": "RM675",
         "total_amount": "RM900",
-        "status": "Confirmed",
+        "status": "Cancelled",
         "phone": "+60 12-583 2147"
     },
     {
@@ -230,6 +230,20 @@
         "room": "Deluxe Room",
         "check_in": "2026-10-01",
         "check_out": "2026-10-04",
+        "guests": 2,
+        "nights": 3,
+        "deposit_paid": "RM297",
+        "remaining_balance": "RM593",
+        "total_amount": "RM890",
+        "status": "Confirmed"
+    },
+    {
+        "booking_id": "BK9703",
+        "name": "Hu Qiao Feng",
+        "phone": "0123456789",
+        "room": "Deluxe Room",
+        "check_in": "2026-10-10",
+        "check_out": "2026-10-13",
         "guests": 2,
         "nights": 3,
         "deposit_paid": "RM297",
