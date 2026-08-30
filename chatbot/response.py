@@ -244,6 +244,46 @@ HUMAN_INTENT_NAMES = {
 }
 
 
+def is_pure_greeting(text: str) -> bool:
+    """Check if the user utterance is purely a greeting without other domain requests."""
+    if not text:
+        return False
+    import re
+    clean = re.sub(r"[^\w\s]", "", text.strip().lower())
+    words = clean.split()
+    greeting_words = {
+        "hi", "hello", "hey", "helo", "hllo", "hallo", "hiii", "hiya", "howdy",
+        "greetings", "good", "morning", "afternoon", "evening", "day", "there", "yo"
+    }
+    return len(words) >= 1 and len(words) <= 3 and all(w in greeting_words for w in words)
+
+
+def has_greeting_prefix(text: str) -> bool:
+    """Check if the utterance begins with a friendly greeting."""
+    if not text:
+        return False
+    import re
+    return bool(re.search(
+        r"^(?:hi|hello|hey|helo|hiii|hiya|howdy|greetings|good\s+(?:morning|afternoon|evening))\b",
+        text.strip().lower()
+    ))
+
+
+def get_greeting_response() -> str:
+    """Generate a warm, friendly welcome message and feature directory."""
+    return (
+        f"👋 **Hello! Welcome to {HOTEL_NAME}.**\n\n"
+        f"I'm **BookMate**, your personal hotel concierge. How may I assist you today?\n\n"
+        f"You can ask me to:\n"
+        f"- 🛏️ **Book a Room** *(e.g. 'I want to book a Deluxe Room')*\n"
+        f"- 💰 **Check Room Rates & Pricing** *(e.g. 'What are your room rates?')*\n"
+        f"- 🔍 **Check Booking Status & Invoices** *(e.g. 'Check booking BK1021' or by phone)*\n"
+        f"- 🏊 **Explore Resort Facilities** *(e.g. 'What facilities do you have?')*\n"
+        f"- 🍳 **Breakfast, Dining & Pet Policies**\n"
+        f"- ❌ **Cancel or Modify Reservations**"
+    )
+
+
 def generate_fallback_response(user_query, predictor, confidence=0.0):
     """
     Generate single explicit intent confirmation or domain-scoped help menu.

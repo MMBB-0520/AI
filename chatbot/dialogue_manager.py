@@ -170,16 +170,34 @@ class DialogueManager:
                 return True, booking
         return False, None
 
-    def _get_booking(self, booking_id):
-        """Find booking by booking ID."""
-        if not booking_id:
+    def _get_booking(self, identifier):
+        """
+        Find booking by Booking ID (e.g. BK1021) or Contact Phone Number (e.g. 012-583 2147).
+        """
+        if not identifier:
             return None
 
-        booking_id = booking_id.upper()
+        clean_id = str(identifier).strip()
+        clean_id_upper = clean_id.upper().replace("#", "").replace("-", "").replace(" ", "")
 
+        # 1. Search by Booking ID
         for booking in self._load_bookings():
-            if booking.get("booking_id", "").upper() == booking_id:
+            b_id = booking.get("booking_id", "").upper().replace("-", "").replace(" ", "")
+            if clean_id_upper == b_id:
                 return booking
+
+        # 2. Search by Contact Phone Number (digit-based matching)
+        query_digits = clean_phone_digits(clean_id)
+        if query_digits and len(query_digits) >= 8:
+            for booking in self._load_bookings():
+                b_phone = booking.get("phone", "")
+                b_digits = clean_phone_digits(b_phone)
+                if b_digits and (
+                    query_digits == b_digits
+                    or query_digits.endswith(b_digits[-8:])
+                    or b_digits.endswith(query_digits[-8:])
+                ):
+                    return booking
 
         return None
 
@@ -201,48 +219,54 @@ class DialogueManager:
     # CANCEL BOOKING
     def _cancel_booking(self, booking_id):
         """Cancel an existing booking."""
-        booking_id = booking_id.upper()
+        booking = self._get_booking(booking_id)
+        if not booking:
+            return (
+                False,
+                f"Could not find any reservation matching **{booking_id}**."
+            )
+
+        b_id = booking.get("booking_id", booking_id)
+        if booking.get("status") == "Cancelled":
+            return (
+                False,
+                f"Booking **{b_id}** is already cancelled."
+            )
+
         bookings = self._load_bookings()
-
-        for booking in bookings:
-            if booking.get("booking_id", "").upper() == booking_id:
-
-                if booking.get("status") == "Cancelled":
-                    return (
-                        False,
-                        f"Booking **{booking_id}** is already cancelled."
-                    )
-
-                booking["status"] = "Cancelled"
+        for b in bookings:
+            if b.get("booking_id", "").upper() == b_id.upper():
+                b["status"] = "Cancelled"
                 self._save_bookings(bookings)
-
                 return (
                     True,
-                    f"❌ Booking **{booking_id}** has been successfully cancelled."
+                    f"❌ Booking **{b_id}** has been successfully cancelled."
                 )
 
         return (
             False,
-            f"Could not find any reservation with Booking ID "
-            f"**{booking_id}**."
+            f"Could not find any reservation matching **{booking_id}**."
         )
 
     # BOOKING STATUS
     def _format_booking_status(self, booking):
         """Format booking information for chatbot response."""
-
         status = booking.get("status", "Confirmed")
-
         emoji = "✅" if status == "Confirmed" else "❌"
+
+        deposit_paid = booking.get("deposit_paid", "N/A")
+        remaining_balance = booking.get("remaining_balance", "N/A")
 
         return (
             f"📋 **Booking Details ({booking.get('booking_id')})**\n\n"
-            f"- **Guest Name** : {booking.get('name', 'N/A')}\n"
-            f"- **Room Type**  : {booking.get('room', 'N/A')}\n"
-            f"- **Check-in**   : {booking.get('check_in', 'N/A')}\n"
-            f"- **Check-out**  : {booking.get('check_out', 'N/A')}\n"
-            f"- **Guests**     : {booking.get('guests', 'N/A')}\n"
-            f"- **Status**     : {emoji} {status}"
+            f"- **Guest Name**       : {booking.get('name', 'N/A')}\n"
+            f"- **Contact Phone**    : `{booking.get('phone', 'N/A')}`\n"
+            f"- **Room Type**        : {booking.get('room', 'N/A')}\n"
+            f"- **Check-in / Out**   : {booking.get('check_in', 'N/A')} to {booking.get('check_out', 'N/A')} ({booking.get('nights', 1)} nights)\n"
+            f"- **Guests**           : {booking.get('guests', 'N/A')} pax\n"
+            f"- **Deposit Paid (1N)**: {deposit_paid}\n"
+            f"- **Check-in Balance** : {remaining_balance}\n"
+            f"- **Booking Status**   : {emoji} **{status}**"
         )
 
     def _format_invoice_details(self, booking):
@@ -482,14 +506,15 @@ class DialogueManager:
 
         return None
 
-    def _ask_next_booking_question(self):
+    def _ask_next_booking_question(self, has_greeting=False):
         """Ask user for the next missing booking field."""
 
         field = self._get_missing_booking_field()
 
         if field == "name":
             self.state["step"] = 1
-            return "Sure! Let me help you book a room.\n\nMay I have your name?"
+            greeting_prefix = f"👋 **Hello! Welcome to {HOTEL_NAME}.**\n\n" if has_greeting else ""
+            return f"{greeting_prefix}Sure! Let me help you book a room.\n\nMay I have your name?"
 
         if field == "phone":
             self.state["step"] = 2
@@ -844,36 +869,61 @@ class DialogueManager:
                 return self._handle_faq_interruption(intent, entities)
             return error
 
-        return self._ask_next_booking_question()
+        has_greeting = bool(re.search(r"^(?:hi|hello|hey|helo|hiii|hiya|howdy|greetings|good\s+(?:morning|afternoon|evening))\b", user_input.strip().lower()))
+        return self._ask_next_booking_question(has_greeting=has_greeting)
 
-    # BOOKING ID ACTIONS
-    def _handle_booking_id_action(self, action, booking_id):
-        """Handle cancel/status/modify/invoice actions requiring booking ID."""
+    # BOOKING ACTIONS (LOOKUP BY BOOKING ID OR PHONE NUMBER)
+    def _handle_booking_id_action(self, action, identifier, entities=None):
+        """Handle cancel/status/modify/invoice actions matching by booking ID or contact phone."""
+        booking = self._get_booking(identifier)
+        if not booking:
+            return (
+                f"Could not find any reservation matching **{identifier}**. "
+                f"Please verify your **Booking ID** (e.g. BK1021) or registered **Phone Number** (e.g. 012-583 2147)."
+            )
 
-        booking_id = booking_id.upper()
+        b_id = booking.get("booking_id", "N/A")
 
         if action == "cancel":
-            booking = self._get_booking(booking_id)
-            if not booking:
-                return (
-                    f"Could not find any reservation with Booking ID "
-                    f"**{booking_id}**. Please verify your booking ID."
-                )
-
             if booking.get("status") == "Cancelled":
                 self.reset()
-                return f"Booking **{booking_id}** is already cancelled."
+                return f"Booking **{b_id}** is already cancelled."
 
-            # Require registered contact phone verification before cancellation
+            target_phone = booking.get("phone", "+60 12-345 6789")
+
+            # Check if user already provided phone in entities or identifier was phone
+            provided_phone = (entities.get("phone") if entities else None)
+            is_verified = False
+            if provided_phone:
+                if (clean_phone_digits(provided_phone) == clean_phone_digits(target_phone)
+                    or clean_phone_digits(provided_phone).endswith(clean_phone_digits(target_phone)[-8:])
+                    or clean_phone_digits(target_phone).endswith(clean_phone_digits(provided_phone)[-8:])):
+                    is_verified = True
+            elif clean_phone_digits(str(identifier)) == clean_phone_digits(target_phone):
+                is_verified = True
+
             self.state["active"] = True
             self.state["action"] = "confirm_cancel"
-            self.state["target_booking_id"] = booking_id
+            self.state["target_booking_id"] = b_id
             self.state["target_guest_name"] = booking.get("name", "Guest")
-            self.state["target_phone"] = booking.get("phone", "+60 12-345 6789")
-            self.state["mobile_2fa_active"] = False
+            self.state["target_phone"] = target_phone
 
+            if is_verified:
+                self.state["mobile_2fa_active"] = True
+                return (
+                    f"⚠️ **Cancellation Verification for Booking {b_id}**\n\n"
+                    f"- **Guest Name**    : {booking.get('name', 'Guest')}\n"
+                    f"- **Contact Phone** : `{target_phone}` (✅ Verified)\n"
+                    f"- **Room Reserved** : {booking.get('room', 'N/A')}\n"
+                    f"- **Stay Dates**    : {booking.get('check_in')} to {booking.get('check_out')}\n"
+                    f"- **Current Status**: {booking.get('status', 'Confirmed')}\n\n"
+                    f"📱 **Please tap [✅ Confirm Cancel] on your mobile screen in the sidebar to finalize the cancellation** "
+                    f"(or type **Keep** to retain your booking)."
+                )
+
+            self.state["mobile_2fa_active"] = False
             return (
-                f"⚠️ **Cancellation Verification for Booking {booking_id}**\n\n"
+                f"⚠️ **Cancellation Verification for Booking {b_id}**\n\n"
                 f"- **Guest Name**    : {booking.get('name', 'Guest')}\n"
                 f"- **Room Reserved** : {booking.get('room', 'N/A')}\n"
                 f"- **Stay Dates**    : {booking.get('check_in')} to {booking.get('check_out')}\n"
@@ -882,74 +932,44 @@ class DialogueManager:
                 f"*(Or type **Keep** / **Never mind** to keep your reservation active)*"
             )
 
-        booking = self._get_booking(booking_id)
-
         if action == "status":
-
-            if not booking:
-                return (
-                    f"No reservation found with Booking ID "
-                    f"**{booking_id}**. Please verify your booking ID."
-                )
-
             self.reset()
             return self._format_booking_status(booking)
 
         if action == "modify":
             self.reset()
-            if not booking:
-                return (
-                    f"Could not find Booking ID **{booking_id}**. "
-                    f"Please check your reference number."
-                )
-
             return (
-                f"✏️ **Modify Reservation ({booking_id} - {booking.get('name', 'Guest')}):**\n\n"
-                f"Due to room availability adjustments and daily rate differences, stay modifications for **{booking_id}** are handled directly by our reservations desk:\n"
+                f"✏️ **Modify Reservation ({b_id} - {booking.get('name', 'Guest')}):**\n\n"
+                f"Due to room availability adjustments and daily rate differences, stay modifications for **{b_id}** are handled directly by our reservations desk:\n"
                 f"- 📞 **Reservations Hotline**: **{PHONE}**\n"
                 f"- ✉️ **Email Support**: **{EMAIL}**\n\n"
-                f"💡 *Tip: Because **{HOTEL_NAME}** offers free cancellation up to {HOTEL_POLICIES['cancellation_window_hours']} hours before check-in, you can also cancel Booking **{booking_id}** here anytime and make a fresh booking with your updated dates!*"
+                f"💡 *Tip: Because **{HOTEL_NAME}** offers free cancellation up to {HOTEL_POLICIES['cancellation_window_hours']} hours before check-in, you can also cancel Booking **{b_id}** here anytime and make a fresh booking with your updated dates!*"
             )
 
         if action == "invoices":
-            if not booking:
-                return (
-                    f"Could not find Booking ID **{booking_id}**. "
-                    f"Please check your reference number."
-                )
             self.reset()
             return self._format_invoice_details(booking)
 
         if action == "add_night":
-            if not booking:
-                return (
-                    f"Could not find Booking ID **{booking_id}**. "
-                    f"Please check your reference number."
-                )
             self.reset()
             return (
-                f"Found your booking **{booking_id}** ({booking.get('room', 'N/A')}).\n\n"
+                f"Found your booking **{b_id}** ({booking.get('room', 'N/A')}).\n\n"
                 f"To extend your stay, please contact our front desk directly at **{PHONE}** "
                 f"or let us know your preferred extension dates!"
             )
 
         if action == "get_refund":
-            if not booking:
-                return (
-                    f"Could not find Booking ID **{booking_id}**. "
-                    f"Please check your reference number."
-                )
             b_status = booking.get("status", "Confirmed")
             self.reset()
             if b_status == "Cancelled":
                 return (
-                    f"💵 **Refund Status for Booking {booking_id}**\n\n"
+                    f"💵 **Refund Status for Booking {b_id}**\n\n"
                     f"Your cancellation has been verified. A full refund is being processed "
                     f"to your original payment method (5-7 business days)."
                 )
             else:
                 return (
-                    f"Reservation **{booking_id}** is currently **{b_status}**.\n\n"
+                    f"Reservation **{b_id}** is currently **{b_status}**.\n\n"
                     f"To request a refund, please process cancellation first or call **{PHONE}**."
                 )
 
@@ -1006,23 +1026,33 @@ class DialogueManager:
             "abort",
             "dont book",
             "don't book",
-            "no thanks"
+            "no thanks",
+            "back",
+            "no",
+            "keep"
         ]
 
         if (
             self.state["active"]
-            and self.state["action"] == "book"
             and not booking_id
-            and any(keyword in text_lower for keyword in cancel_keywords)
+            and not entities.get("phone")
+            and any(re.search(rf"\b{re.escape(kw)}\b", text_lower) for kw in cancel_keywords)
         ):
+            action = self.state.get("action")
+            target_id = self.state.get("target_booking_id")
             self.reset()
 
-            return (
-                "No problem! I've cancelled the booking process. "
-                "Is there anything else I can help you with?"
-            )
+            if action == "book":
+                return (
+                    "No problem! I've cancelled the booking process. "
+                    "Is there anything else I can help you with?"
+                )
+            elif action == "confirm_cancel" and target_id:
+                return f"Cancellation aborted. Your reservation **{target_id}** remains active and confirmed!"
+            else:
+                return "No problem! Process cancelled. Is there anything else I can help you with?"
 
-        # ACTIVE BOOKING-ID ACTION
+        # ACTIVE BOOKING-ID OR PHONE ACTION
         if (
             self.state["active"]
             and self.state["action"] in [
@@ -1034,24 +1064,44 @@ class DialogueManager:
                 "get_refund"
             ]
         ):
+            # If user switched to an FAQ intent instead of providing an ID
+            if intent and intent in FAQ_INTENTS:
+                self.reset()
+                return get_response(intent, entities=entities)
 
             if booking_id:
                 return self._handle_booking_id_action(
                     self.state["action"],
-                    booking_id
+                    booking_id,
+                    entities=entities
                 )
 
-            # User might simply type:
-            # BK1234
-            possible_id = user_input.strip().upper()
-
-            if possible_id.startswith("BK"):
+            extracted_phone = entities.get("phone")
+            if extracted_phone:
                 return self._handle_booking_id_action(
                     self.state["action"],
-                    possible_id
+                    extracted_phone,
+                    entities=entities
                 )
 
-            return "Please provide a valid Booking ID, for example **BK1234**."
+            # User might type: BK1234 or a phone number
+            possible_input = user_input.strip()
+            if possible_input.upper().startswith("BK"):
+                return self._handle_booking_id_action(
+                    self.state["action"],
+                    possible_input.upper(),
+                    entities=entities
+                )
+
+            clean_digits = clean_phone_digits(possible_input)
+            if len(clean_digits) >= 8:
+                return self._handle_booking_id_action(
+                    self.state["action"],
+                    possible_input,
+                    entities=entities
+                )
+
+            return "Please provide a valid **Booking ID** (e.g. BK1021) or registered **Phone Number** (e.g. 012-583 2147)."
 
         # ACTIVE CANCEL CONFIRMATION (PHONE NUMBER VERIFICATION)
         if self.state["active"] and self.state["action"] == "confirm_cancel":
@@ -1098,11 +1148,12 @@ class DialogueManager:
 
         # CANCEL BOOKING
         if intent == "cancel_hotel_reservation":
-
-            if booking_id:
+            target_identifier = booking_id or entities.get("phone")
+            if target_identifier:
                 return self._handle_booking_id_action(
                     "cancel",
-                    booking_id
+                    target_identifier,
+                    entities=entities
                 )
 
             self.state["active"] = True
@@ -1111,17 +1162,18 @@ class DialogueManager:
             self.state["awaiting_slot"] = "booking_id"
 
             return (
-                "Sure! Please provide your **Booking ID** "
-                "(e.g. BK1234) so I can cancel your reservation."
+                "Sure! Please provide your **Booking ID** (e.g. BK1021) or registered **Phone Number** (e.g. 012-583 2147) "
+                "so I can cancel your reservation."
             )
 
         # BOOKING STATUS
         if intent == "check_hotel_reservation":
-
-            if booking_id:
+            target_identifier = booking_id or entities.get("phone")
+            if target_identifier:
                 return self._handle_booking_id_action(
                     "status",
-                    booking_id
+                    target_identifier,
+                    entities=entities
                 )
 
             self.state["active"] = True
@@ -1131,22 +1183,29 @@ class DialogueManager:
 
             return (
                 "I'd be happy to check your reservation. "
-                "Please enter your **Booking ID** (e.g. BK1234)."
+                "Please enter your **Booking ID** (e.g. BK1021) or registered **Phone Number** (e.g. 012-583 2147)."
             )
 
         # MODIFY BOOKING (Front Desk Hotline & Free Re-booking Guidance)
         if intent == "change_hotel_reservation":
-            if booking_id:
+            target_identifier = booking_id or entities.get("phone")
+            if target_identifier:
                 return self._handle_booking_id_action(
                     "modify",
-                    booking_id
+                    target_identifier,
+                    entities=entities
                 )
             return get_response("change_hotel_reservation", entities=entities)
 
         # INVOICES
         if intent == "invoices":
-            if booking_id:
-                return self._handle_booking_id_action("invoices", booking_id)
+            target_identifier = booking_id or entities.get("phone")
+            if target_identifier:
+                return self._handle_booking_id_action(
+                    "invoices",
+                    target_identifier,
+                    entities=entities
+                )
 
             self.state["active"] = True
             self.state["action"] = "invoices"
@@ -1154,14 +1213,19 @@ class DialogueManager:
             self.state["awaiting_slot"] = "booking_id"
 
             return (
-                "To retrieve your official tax invoice, please provide your **Booking ID** "
-                "(e.g. BK7496)."
+                "To retrieve your official tax invoice, please provide your **Booking ID** (e.g. BK1021) "
+                "or registered **Phone Number** (e.g. 012-583 2147)."
             )
 
         # EXTEND STAY (ADD NIGHT)
         if intent == "add_night":
-            if booking_id:
-                return self._handle_booking_id_action("add_night", booking_id)
+            target_identifier = booking_id or entities.get("phone")
+            if target_identifier:
+                return self._handle_booking_id_action(
+                    "add_night",
+                    target_identifier,
+                    entities=entities
+                )
 
             self.state["active"] = True
             self.state["action"] = "add_night"
@@ -1169,14 +1233,19 @@ class DialogueManager:
             self.state["awaiting_slot"] = "booking_id"
 
             return (
-                "I'd be happy to help extend your stay! Please provide your **Booking ID** "
-                "(e.g. BK7496)."
+                "I'd be happy to help extend your stay! Please provide your **Booking ID** (e.g. BK1021) "
+                "or registered **Phone Number** (e.g. 012-583 2147)."
             )
 
         # GET REFUND
         if intent == "get_refund":
-            if booking_id:
-                return self._handle_booking_id_action("get_refund", booking_id)
+            target_identifier = booking_id or entities.get("phone")
+            if target_identifier:
+                return self._handle_booking_id_action(
+                    "get_refund",
+                    target_identifier,
+                    entities=entities
+                )
 
             self.state["active"] = True
             self.state["action"] = "get_refund"
@@ -1184,8 +1253,8 @@ class DialogueManager:
             self.state["awaiting_slot"] = "booking_id"
 
             return (
-                "To process your refund request, please share your **Booking ID** "
-                "(e.g. BK7496)."
+                "To process your refund request, please share your **Booking ID** (e.g. BK1021) "
+                "or registered **Phone Number** (e.g. 012-583 2147)."
             )
 
         # AVAILABILITY INQUIRY CONTEXT TRACKING
@@ -1234,9 +1303,10 @@ class DialogueManager:
                 self.state["pending_intent"] = None
                 self.state["awaiting_slot"] = None
 
-        # STANDALONE BOOKING ID EXPRESS RULE
-        if booking_id and not self.state["active"]:
-            return self._handle_booking_id_action("status", booking_id)
+        # STANDALONE BOOKING ID OR PHONE EXPRESS RULE
+        express_target = booking_id or entities.get("phone")
+        if express_target and not self.state["active"]:
+            return self._handle_booking_id_action("status", express_target, entities=entities)
 
         return None
 

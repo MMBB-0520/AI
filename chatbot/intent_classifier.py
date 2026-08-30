@@ -26,7 +26,10 @@ Machine Learning Pipeline:
 """
 
 import os
+import re
 import sys
+import json
+from datetime import datetime
 import joblib
 import numpy as np
 
@@ -46,62 +49,6 @@ MODEL_DIR = os.path.join(
     PROJECT_ROOT,
     "models"
 )
-
-# High-frequency domain keyword boosts for short sparse inputs
-SHORT_KEYWORD_BOOSTS = {
-    "wifi": "check_hotel_facilities",
-    "wi-fi": "check_hotel_facilities",
-    "internet": "check_hotel_facilities",
-    "pool": "check_hotel_facilities",
-    "swimming": "check_hotel_facilities",
-    "gym": "check_hotel_facilities",
-    "fitness": "check_hotel_facilities",
-    "spa": "check_hotel_facilities",
-    "massage": "check_hotel_facilities",
-    "park": "book_parking_space",
-    "parking": "book_parking_space",
-    "car park": "book_parking_space",
-    "breakfast": "check_menu",
-    "menu": "check_menu",
-    "food": "check_menu",
-    "dinner": "check_menu",
-    "lunch": "check_menu",
-    "price": "check_hotel_prices",
-    "prices": "check_hotel_prices",
-    "rate": "check_hotel_prices",
-    "rates": "check_hotel_prices",
-    "cost": "check_hotel_prices",
-    "pet": "bring_pets",
-    "pets": "bring_pets",
-    "dog": "bring_pets",
-    "cat": "bring_pets",
-    "cancel": "cancel_hotel_reservation",
-    "cancellation": "cancellation_fees",
-    "book": "book_hotel",
-    "booking": "book_hotel",
-    "reserve": "book_hotel",
-    "reservation": "book_hotel",
-    "modify": "change_hotel_reservation",
-    "change": "change_hotel_reservation",
-    "checkin": "check_in",
-    "check-in": "check_in",
-    "checkout": "check_out",
-    "check-out": "check_out",
-    "status": "check_hotel_reservation",
-    "invoice": "invoices",
-    "invoices": "invoices",
-    "receipt": "invoices",
-    "bill": "invoices",
-    "shuttle": "shuttle_service",
-    "transport": "shuttle_service",
-    "luggage": "store_luggage",
-    "baggage": "store_luggage",
-    "human": "human_agent",
-    "agent": "human_agent",
-    "complain": "file_complaint",
-    "complaint": "file_complaint",
-    "refund": "get_refund"
-}
 
 
 class IntentPredictor:
@@ -147,7 +94,7 @@ class IntentPredictor:
             vectorizer_file = os.path.join(MODEL_DIR, "lr_vectorizer.pkl")
             encoder_file = os.path.join(MODEL_DIR, "lr_label_encoder.pkl")
         elif "naive" in model_name.lower():
-            model_file = os.path.join(MODEL_DIR, "naive_bayes.pkl")
+            model_file = os.path.join(MODEL_DIR, "nb.pkl") if os.path.exists(os.path.join(MODEL_DIR, "nb.pkl")) else os.path.join(MODEL_DIR, "naive_bayes.pkl")
             vectorizer_file = os.path.join(MODEL_DIR, "nb_vectorizer.pkl")
             encoder_file = os.path.join(MODEL_DIR, "nb_label_encoder.pkl")
         else:
@@ -236,6 +183,40 @@ class IntentPredictor:
 
         return np.zeros((text_vector.shape[0], len(self.intents)))
 
+    def _match_keyword_boost(self, message: str) -> str | None:
+        """Check if message or stripped message matches a domain keyword boost."""
+        if not message:
+            return None
+
+        raw_clean = message.strip().lower()
+        clean_no_id = re.sub(r"\b#?bk[-\s_]?\d+\b|\b(?:\+?60|0)1\d{7,9}\b|\b\d{8,12}\b", "", raw_clean).strip()
+        clean_no_id = re.sub(r"\s+", " ", clean_no_id).strip(" .,:;!?")
+
+        if any(clean_no_id.startswith(p) for p in ["check booking", "check my booking", "check reservation", "check my reservation", "view booking", "view my booking", "booking status"]):
+            return "check_hotel_reservation"
+        if any(clean_no_id.startswith(p) for p in ["get invoice", "check invoice", "my invoice", "view invoice", "official invoice", "tax invoice"]):
+            return "invoices"
+        if any(clean_no_id.startswith(p) for p in ["cancel booking", "cancel reservation", "cancel my booking", "cancel my reservation"]):
+            return "cancel_hotel_reservation"
+
+        # Domain term regex boosts
+        if re.search(r"\b(?:breakfast|dining|menu|buffet|restaurant|food|dinner|lunch)\b", clean_no_id):
+            return "check_menu"
+        if re.search(r"\b(?:wifi|wi-fi|swimming pool|pool|fitness gym|gym|spa|massage)\b", clean_no_id):
+            return "check_hotel_facilities"
+        if re.search(r"\b(?:pet|pets|dog|dogs|cat|cats)\b", clean_no_id):
+            return "bring_pets"
+        if re.search(r"\b(?:parking|car park|valet)\b", clean_no_id):
+            return "book_parking_space"
+        if re.search(r"\b(?:shuttle|airport transfer)\b", clean_no_id):
+            return "shuttle_service"
+        if re.search(r"\b(?:luggage|baggage)\b", clean_no_id):
+            return "store_luggage"
+        if re.search(r"\b(?:price|prices|rate|rates|room rate|room rates|cost)\b", clean_no_id):
+            return "check_hotel_prices"
+
+        return None
+
     def predict(
         self,
         user_message: str,
@@ -273,10 +254,9 @@ class IntentPredictor:
         margin = top1_conf - top2_conf
 
         # Short text keyword boost protection
-        raw_clean = user_message.strip().lower()
-        if raw_clean in SHORT_KEYWORD_BOOSTS:
-            boost_intent = SHORT_KEYWORD_BOOSTS[raw_clean]
-            top1_intent = boost_intent
+        boost_match = self._match_keyword_boost(user_message)
+        if boost_match:
+            top1_intent = boost_match
             top1_conf = max(0.95, top1_conf)
 
         # 1. Zero-feature protection (No vocabulary features matched in input)
@@ -378,10 +358,9 @@ class IntentPredictor:
         is_ambiguous = (margin < 0.15)
 
         # Short text boost
-        raw_clean = user_message.strip().lower()
-        if raw_clean in SHORT_KEYWORD_BOOSTS:
-            boost_intent = SHORT_KEYWORD_BOOSTS[raw_clean]
-            best["intent"] = boost_intent
+        boost_match = self._match_keyword_boost(user_message)
+        if boost_match:
+            best["intent"] = boost_match
             best["confidence"] = max(0.95, best["confidence"])
 
         if best["confidence"] < self.confidence_threshold:
@@ -438,10 +417,9 @@ class IntentPredictor:
                 top2_conf = float(probs[top2_idx]) if len(ranked) > 1 else 0.0
                 margin = top1_conf - top2_conf
 
-                raw = messages[original_idx].strip().lower()
-                if raw in SHORT_KEYWORD_BOOSTS:
-                    boost_intent = SHORT_KEYWORD_BOOSTS[raw]
-                    top1_intent = boost_intent
+                boost_match = self._match_keyword_boost(messages[original_idx])
+                if boost_match:
+                    top1_intent = boost_match
                     top1_conf = max(0.95, top1_conf)
 
                 is_ambiguous = (margin < 0.15)
@@ -455,7 +433,7 @@ class IntentPredictor:
                     "margin": margin,
                     "is_ambiguous": is_ambiguous,
                     "status": status,
-                    "cleaned_text": cleaned_texts[original_idx]
+                    "cleaned_text": valid_cleaned[row_idx]
                 }
 
         return results

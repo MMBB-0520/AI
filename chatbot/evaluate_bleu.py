@@ -128,3 +128,6 @@ def evaluate_bleu(sample_size=500, random_seed=42):
     print("as the bot uses professionally polished, brand-specific templates rather")
     print("than verbatim copies of the raw dataset text.")
     print("=" * 65)
+
+if __name__ == "__main__":
+    evaluate_bleu()
