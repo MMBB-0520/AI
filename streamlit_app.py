@@ -39,12 +39,51 @@ st.subheader("Your Smart Hotel Booking Assistant")
 
 st.write(f"Welcome to **{HOTEL_NAME}**!")
 
+# INITIALIZE SESSION STATE
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+
+if "dialogue_manager" not in st.session_state:
+    st.session_state.dialogue_manager = DialogueManager()
+
+if "user_ratings" not in st.session_state:
+    st.session_state.user_ratings = [5, 5, 4, 5]
+
+dialogue_manager = st.session_state.dialogue_manager
+
 # SIDEBAR
 with st.sidebar:
 
     st.header(f"🏨 {HOTEL_NAME}")
     st.caption("BookMate Intelligent Concierge")
     
+    # MODEL SELECTOR (Member-specific Chatbot Models)
+    model_map = {
+        "Support Vector Machine (SVM)": "Support Vector Machine",
+        "Logistic Regression (LR)": "Logistic Regression",
+        "Multinomial Naive Bayes (NB)": "Naive Bayes"
+    }
+
+    selected_model_option = st.selectbox(
+        "🤖 Select Chatbot Model",
+        options=list(model_map.keys()),
+        index=0,
+        help="Switch between distinct ML models developed by each group member."
+    )
+    model = model_map[selected_model_option]
+
+    # LOAD / REFRESH INTENT PREDICTOR IN SESSION STATE
+    if (
+        "predictor" not in st.session_state
+        or st.session_state.get("current_model") != model
+    ):
+        st.session_state.predictor = IntentPredictor(model)
+        st.session_state.current_model = model
+
+    predictor = st.session_state.predictor
+
+    st.divider()
+
     st.markdown("**✨ Supported Services**")
     
     with st.expander("🛏️ Reservations", expanded=True):
@@ -212,32 +251,6 @@ with st.sidebar:
             )
 
     st.divider()
-    # MODEL SELECTOR (Member-specific Chatbot Models)
-    model_map = {
-        "Support Vector Machine (SVM)": "Support Vector Machine",
-        "Logistic Regression (LR)": "Logistic Regression",
-        "Multinomial Naive Bayes (NB)": "Naive Bayes"
-    }
-
-    selected_model_option = st.selectbox(
-        "🤖 Select Chatbot Model",
-        options=list(model_map.keys()),
-        index=0,
-        help="Switch between distinct ML models developed by each group member."
-    )
-    model = model_map[selected_model_option]
-
-    # LOAD / REFRESH INTENT PREDICTOR IN SESSION STATE
-    if (
-        "predictor" not in st.session_state
-        or st.session_state.get("current_model") != model
-    ):
-        st.session_state.predictor = IntentPredictor(model)
-        st.session_state.current_model = model
-
-    predictor = st.session_state.predictor
-
-    st.divider()
 
     show_debug = st.toggle(
         "🔍 Developer Debug Mode",
@@ -257,10 +270,6 @@ with st.sidebar:
         - **Intents Covered**: 25 Categories
         """)
 
-    # Interactive User Satisfaction Rating (Requirement f.iii & g.iii)
-    if "user_ratings" not in st.session_state:
-        st.session_state.user_ratings = [5, 5, 4, 5]
-
     with st.expander("⭐ Feedback & Satisfaction (CSAT)", expanded=False):
         ratings = st.session_state.user_ratings
         avg_rating = sum(ratings) / len(ratings) if ratings else 5.0
@@ -273,16 +282,6 @@ with st.sidebar:
             st.session_state.user_ratings.append(feedback_val)
             st.success("Thank you for your feedback!")
             st.rerun()
-
-# INITIALIZE SESSION STATE
-if "messages" not in st.session_state:
-    st.session_state.messages = []
-
-# LOAD DIALOGUE MANAGER
-if "dialogue_manager" not in st.session_state:
-    st.session_state.dialogue_manager = DialogueManager()
-
-dialogue_manager = st.session_state.dialogue_manager
 
 # DISPLAY MESSAGE HISTORY
 for message in st.session_state.messages:
