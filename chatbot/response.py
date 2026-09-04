@@ -1,209 +1,216 @@
 """
 BookMate Chatbot
-Response Dictionary
+Response Generator & Knowledge Binding
 
 Purpose:
-Store chatbot responses for each detected intent (supporting all 25 Bitext Hospitality intents).
+Generate context-aware responses bound to hotel_info knowledge base
+(supporting all 25 Bitext Hospitality intents, rich markdown formatting, and dynamic slot filling).
 """
 
-from chatbot.hotel_info import *
+from chatbot.hotel_info import (
+    HOTEL_NAME, PHONE, EMAIL, ADDRESS,
+    CHECK_IN, CHECK_OUT, BREAKFAST_TIME, PARKING,
+    PAYMENT_METHODS, FACILITIES, FACILITY_DETAILS,
+    ROOM_DETAILS, ROOM_PRICES, ROOM_TYPES, HOTEL_POLICIES
+)
 import random
+
+def get_room_price_table() -> str:
+    """Generate a clean Markdown price & accommodation table."""
+    table = (
+        f"🏨 **{HOTEL_NAME} Room Rates & Accommodations:**\n\n"
+        "| Room Type | Rate / Night | Capacity | Bed & View |\n"
+        "| :--- | :---: | :---: | :--- |\n"
+    )
+    for room, d in ROOM_DETAILS.items():
+        table += f"| **{room}** | **{d['price']}** | {d['capacity']} | {d['bed']} ({d['view']}) |\n"
+    table += "\n*Rates exclude 6% SST. All rooms include complimentary high-speed WiFi.*"
+    return table
+
+
+def get_single_room_card(room_name: str) -> str:
+    """Generate a detailed markdown specification card for a specific room."""
+    d = ROOM_DETAILS.get(room_name)
+    if not d:
+        return f"The rate for **{room_name}** is **{ROOM_PRICES.get(room_name, 'available on request')}**."
+
+    features_str = ", ".join(d.get("features", []))
+    return (
+        f"🛏️ **{room_name} Details:**\n\n"
+        f"- **Rate**     : **{d['price']}** / night (excl. 6% SST)\n"
+        f"- **Capacity** : {d['capacity']} (Size: {d.get('size', 'N/A')})\n"
+        f"- **Bedding**  : {d['bed']}\n"
+        f"- **View**     : {d['view']}\n"
+        f"- **Features** : {features_str}"
+    )
+
+
+def get_facilities_summary() -> str:
+    """Generate a summary of all resort facilities and their operating hours."""
+    lines = [f"🏊 **{HOTEL_NAME} Resort Facilities & Operating Hours:**\n"]
+    for name, d in FACILITY_DETAILS.items():
+        lines.append(f"- **{name}** (`{d['hours']}`): {d['description']}")
+    return "\n".join(lines)
+
 
 responses = {
 
-    # 1. Book Hotel (Replacing book_room)
+    # 1. Book Hotel
     "book_hotel": [
         "I'd be happy to help you book a room. What are your check-in and check-out dates?",
-        "Sure! Which room type would you like to reserve?",
-        "Let's make your reservation. May I know your preferred dates?"
+        "Sure! Which room type would you like to reserve? We offer Standard Room, Deluxe Room, Family Suite, and Ocean Villa.",
+        "Let's make your reservation. May I have your name and preferred stay dates?"
     ],
 
-    # 2. Cancel Hotel Reservation (Replacing cancel_booking)
+    # 2. Cancel Hotel Reservation
     "cancel_hotel_reservation": [
-        "I'm sorry to hear that. Please provide your booking ID to cancel your reservation.",
-        "Sure! I can help you cancel your booking. May I have your booking number?",
-        "Please share your reservation ID so I can process your cancellation."
+        "I can certainly help you cancel your reservation. Please provide your **Booking ID** (e.g. BK1234) so I can verify your booking.",
+        "Sure! I can help you process your cancellation. May I have your booking reference number?",
+        "Please share your Booking ID so we can verify your booking and process your cancellation."
     ],
 
-    # 3. Change Hotel Reservation (Replacing modify_booking)
+    # 3. Change Hotel Reservation
     "change_hotel_reservation": [
-        "Sure! Please provide your booking ID so I can help modify your reservation.",
-        "I'd be happy to update your booking. What would you like to change?",
-        "Please tell me your booking details and the changes you would like to make."
+        f"✏️ **Need to modify your reservation dates or room?**\n\n"
+        f"Due to room availability adjustments and daily rate differences, stay modifications are handled directly by our reservations desk:\n"
+        f"- 📞 **Reservations Hotline**: **{PHONE}**\n"
+        f"- ✉️ **Email Support**: **{EMAIL}**\n\n"
+        f"💡 *Tip: Because **{HOTEL_NAME}** offers free cancellation up to {HOTEL_POLICIES['cancellation_window_hours']} hours before check-in, you can also cancel your current reservation here anytime and make a fresh booking with your updated dates!*",
+        f"To change your stay dates or room category, please contact our 24-hour reservations team at **{PHONE}** or email **{EMAIL}**.\n\n"
+        f"Alternatively, you can cancel your existing booking for free and reserve your preferred room again!"
     ],
 
-    # 4. Check Hotel Reservation (Replacing booking_status)
+    # 4. Check Hotel Reservation
     "check_hotel_reservation": [
-        "Please provide your booking ID so I can check your reservation status.",
-        "I'd be happy to help. What is your booking reference number?",
-        "Kindly provide your booking number for verification."
+        "Please provide your **Booking ID** so I can check your current reservation status and details.",
+        "I'd be happy to look up your reservation. What is your booking reference number?",
+        "Kindly provide your Booking ID for status verification."
     ],
 
-    # 5. Check Hotel Prices (Replacing room_price)
+    # 5. Check Hotel Prices
     "check_hotel_prices": [
-        "Our Standard Room starts from RM180 per night.",
-        "Our room rates range from RM180 to RM780 per night depending on the room type.",
-        "Which room type would you like to know the price for?",
-        "Our room rates are:\n" + "\n".join(f"- {room}: {price}" for room, price in ROOM_PRICES.items())
+        get_room_price_table()
     ],
 
-    # 6. Check Hotel Facilities (Replacing hotel_facilities)
+    # 6. Check Hotel Facilities
     "check_hotel_facilities": [
-        f"Our resort offers: {', '.join(FACILITIES)}.",
-        "Guests can enjoy our swimming pool, fitness centre, spa, and beach access.",
-        "We provide top facilities including free WiFi, outdoor pool, spa and restaurant."
+        get_facilities_summary()
     ],
 
     # 7. Check Hotel Offers
     "check_hotel_offers": [
-        f"We currently offer special packages for weekend stays and seasonal discounts at {HOTEL_NAME}!",
-        "Enjoy up to 20% off when booking directly with BookMate!",
-        "Check our seasonal promotions for free breakfast upgrades and spa vouchers!"
+        f"🎁 We currently offer seasonal packages and direct booking perks at {HOTEL_NAME}!\n\n"
+        "- **Direct Booking Bonus**: Enjoy complimentary buffet breakfast upgrade.\n"
+        "- **Long Stay Offer**: Stay 4 nights or more and receive RM100 spa voucher.\n"
+        "- **Early Bird Discount**: Book 14 days in advance for 15% off regular room rates."
     ],
 
-    # 8. Check In (Replacing checkin_checkout)
+    # 8. Check In
     "check_in": [
-        f"Check-in starts at {CHECK_IN}. Early check-in is subject to availability.",
-        f"Our standard check-in time is {CHECK_IN} at the main reception.",
-        f"You can check in starting from {CHECK_IN}. Please have your IC or Passport ready!"
+        f"Check-in starts at **{CHECK_IN}**. {HOTEL_POLICIES['early_checkin']}",
+        f"Our standard check-in time is **{CHECK_IN}** at the main reception lobby. Please have your ID / Passport ready.",
+        f"You can check in starting from **{CHECK_IN}**. If you arrive early, complimentary luggage storage is available!"
     ],
 
     # 9. Check Out
     "check_out": [
-        f"Check-out is before {CHECK_OUT}. Late check-out can be requested at the reception.",
-        f"Our standard check-out time is {CHECK_OUT}.",
-        f"Please check out by {CHECK_OUT} on your departure date."
-    ],
-    "checkin_checkout": [
-        f"Check-in starts at {CHECK_IN} and check-out is before {CHECK_OUT}.",
-        f"Our standard check-in time is {CHECK_IN}, while check-out is at {CHECK_OUT}."
+        f"Check-out is before **{CHECK_OUT}**. Late check-out requests can be made at the reception subject to availability.",
+        f"Our standard check-out time is **{CHECK_OUT}**.",
+        f"Please check out by **{CHECK_OUT}** on your departure date."
     ],
 
-    # 10. Book Parking Space (Replacing parking)
+    # 10. Book Parking Space
     "book_parking_space": [
-        "Free parking is available for all hotel guests.",
-        "Yes! We provide complimentary parking throughout your stay.",
-        f"Parking is free and available 24 hours. {PARKING}"
+        f"🚗 {PARKING} We have 24-hour secured on-site parking with EV charging stations available.",
+        "Yes! Complimentary parking is provided for all registered guests throughout their stay."
     ],
 
     # 11. Bring Pets
     "bring_pets": [
-        f"Pets are welcome in designated pet-friendly rooms at {HOTEL_NAME}. Please inform us in advance!",
-        "We allow small pets in specific suites. Additional cleaning fees may apply."
+        f"🐾 {HOTEL_POLICIES['pet_policy']}",
+        "We welcome small pets in designated pet-friendly Ocean Villas! Please inform our front desk prior to arrival."
     ],
 
-    # 12. Check Menu (Replacing breakfast)
+    # 12. Check Menu
     "check_menu": [
-        f"Breakfast is served daily from {BREAKFAST_TIME}. We offer buffet breakfast, room service, and dinner menus.",
-        "Breakfast is included for Deluxe Room, Family Suite and Ocean Villa.",
-        "Our restaurant serves local and international dining options all day."
+        f"🍳 Breakfast is served daily from **{BREAKFAST_TIME}** at The Orient Bistro. We offer buffet spreads, a la carte dining, and 24-hour room service.",
+        "Breakfast is complimentary for Deluxe Room, Family Suite, and Ocean Villa guests.",
+        "Our restaurant offers authentic Malaysian specialties, fresh seafood, and Western favorites from 6:30 AM to 10:30 PM."
     ],
 
     # 13. Invoices
     "invoices": [
-        "You can view and download your invoices from your booking confirmation or request a copy at checkout.",
-        "To obtain your invoice, please provide your booking ID and email address.",
-        "Our front desk team can issue an official tax invoice upon check-out."
+        "🧾 You can view and download official invoices with your Booking ID, or request a printed tax invoice upon check-out.",
+        "To obtain your invoice details, please provide your **Booking ID**."
     ],
 
     # 14. Cancellation Fees
     "cancellation_fees": [
-        "Cancellations made at least 48 hours prior to check-in are completely free of charge.",
-        "Free cancellation is available up to 2 days before arrival. Late cancellations may incur a 1-night room charge."
+        f"💳 **Cancellation Policy:**\n- {HOTEL_POLICIES['cancellation_policy']}\n- {HOTEL_POLICIES['late_cancellation_fee']}",
+        f"Free cancellation is available up to {HOTEL_POLICIES['cancellation_window_hours']} hours before check-in. Late cancellations incur a 1-night charge."
     ],
 
     # 15. Customer Service
     "customer_service": [
-        f"Our customer support team is available 24/7. You can contact us at {PHONE} or email {EMAIL}.",
-        f"Feel free to reach out to us at {PHONE} or email {EMAIL} for any assistance!"
+        f"📞 Our guest support team is available 24/7. You can contact us at **{PHONE}** or email **{EMAIL}**.",
+        f"Feel free to reach out anytime at **{PHONE}** or email **{EMAIL}** for personalized assistance!"
     ],
 
     # 16. Human Agent
     "human_agent": [
-        f"Connecting you to a human agent... You can also call our front desk directly at {PHONE}.",
-        f"A customer service agent will assist you shortly. Phone: {PHONE}."
+        f"🎧 Connecting you to our front desk team... You can also call us directly at **{PHONE}** for urgent assistance.",
+        f"A guest service representative will assist you shortly. Front desk hotline: **{PHONE}**."
     ],
 
     # 17. Host Event
     "host_event": [
-        f"{HOTEL_NAME} offers banquet halls and meeting rooms for events, weddings, and conferences. Contact us at {EMAIL}!",
-        "We provide event spaces equipped with audiovisual gear for meetings and private celebrations."
+        f"🎉 **{HOTEL_NAME}** offers grand banquet halls, beachfront lawn pavilions, and meeting rooms for weddings, corporate retreats, and private parties. Contact our events team at **{EMAIL}**!"
     ],
 
     # 18. File Complaint
     "file_complaint": [
-        "We apologize for any dissatisfaction. Please share your feedback or booking ID so our manager can assist immediately.",
-        f"We take complaints seriously. Please detail your issue or email our management directly at {EMAIL}."
+        f"💬 We sincerely apologize for any inconvenience. Please provide your booking details or contact management directly at **{EMAIL}** or **{PHONE}** so we can resolve this immediately.",
+        f"We take guest feedback very seriously. Please let us know your concern or email **{EMAIL}**."
     ],
 
     # 19. Leave Review
     "leave_review": [
-        "Thank you for your feedback! You can leave a review on our website or Google review page.",
-        f"We appreciate your stay at {HOTEL_NAME}! We'd love to hear your review of our service."
+        f"⭐ Thank you for your feedback! We would love to hear about your experience at **{HOTEL_NAME}**. You can share your review on Google Reviews or TripAdvisor."
     ],
 
     # 20. Store Luggage
     "store_luggage": [
-        "Yes! Complimentary luggage storage is available at reception before check-in or after check-out.",
-        "We offer free 24/7 luggage storage at the front desk for our guests."
+        f"🧳 {HOTEL_POLICIES['luggage_storage']}",
+        "Yes! Complimentary luggage storage is available before check-in or after check-out at the reception."
     ],
 
     # 21. Add Night
     "add_night": [
-        "I'd be happy to help extend your stay! Please provide your booking ID and how many extra nights you'd like to add.",
-        "To extend your stay, please share your reservation ID."
+        "📅 I'd be happy to help extend your stay! Please provide your **Booking ID** and the dates you wish to add.",
+        "To extend your stay, please provide your Booking ID so I can check room availability."
     ],
 
     # 22. Redeem Points
     "redeem_points": [
-        "You can redeem your loyalty reward points for room upgrades, free breakfast, or discount vouchers during booking.",
-        "BookMate rewards points can be applied toward your current or future reservations."
+        "🎁 You can redeem BookMate loyalty reward points for room rate discounts, breakfast upgrades, or late check-out perks during reservation."
     ],
 
     # 23. Get Refund
     "get_refund": [
-        "Refunds for eligible cancellations are processed within 5-7 business days to your original payment method.",
-        "Please provide your booking ID so our finance team can verify and issue your refund."
+        f"💵 Refunds for eligible cancelled reservations are processed within **{HOTEL_POLICIES['refund_timeframe']}**.",
+        f"Please provide your Booking ID so our finance desk can verify your refund status ({HOTEL_POLICIES['refund_timeframe']})."
     ],
 
     # 24. Shuttle Service
     "shuttle_service": [
-        f"{HOTEL_NAME} provides airport shuttle and local transport services upon request. Please arrange with reception in advance.",
-        "We offer hourly complimentary shuttle buses to nearby attractions and shopping districts."
+        f"🚌 **Shuttle Transport**: {HOTEL_POLICIES['shuttle_service']}. Please reserve with the concierge desk.",
+        f"We offer hourly scheduled shuttle bus transfers between {HOTEL_NAME}, Langkawi Airport (LGK), and local shopping hubs."
     ],
 
     # 25. Search Hotel
     "search_hotel": [
-        f"Welcome to {HOTEL_NAME}! We are located at {ADDRESS}, offering standard rooms, deluxe suites, and ocean villas.",
-        f"Looking for a relaxing stay? {HOTEL_NAME} offers beachfront luxury and top-tier hospitality."
-    ],
-
-    # Legacy & General Intents
-    "greeting": [
-        f"Hello! Welcome to {HOTEL_NAME}. How may I assist you today?",
-        "Hi! I'm BookMate. How can I help you?",
-        f"Welcome to {HOTEL_NAME}! Feel free to ask me anything."
-    ],
-    "goodbye": [
-        f"Thank you for choosing {HOTEL_NAME}. Have a wonderful day!",
-        f"Goodbye! We hope to welcome you to {HOTEL_NAME} soon.",
-        "Take care and have a pleasant day!"
-    ],
-    "location": [
-        f"{HOTEL_NAME} is located at {ADDRESS}.",
-        f"You can visit us at {ADDRESS}."
-    ],
-    "contact": [
-        f"You can contact us at {PHONE} or email us at {EMAIL}.",
-        f"Feel free to call us at {PHONE} or email us at {EMAIL} for assistance."
-    ],
-    "payment": [
-        f"We accept {', '.join(PAYMENT_METHODS)}.",
-        "You can pay using credit card, online banking or DuitNow QR."
-    ],
-    "availability": [
-        "Sure! Please tell me your check-in and check-out dates.",
-        "I'd be happy to check room availability for you. When would you like to stay?"
+        f"🏨 Welcome to **{HOTEL_NAME}**! Located at **{ADDRESS}**, offering beachfront accommodations, luxury suites, and full resort amenities.",
+        f"**{HOTEL_NAME}** is a premier beach resort located at {ADDRESS} with direct sea access, infinity pool, and world-class hospitality."
     ]
 }
 
@@ -218,7 +225,6 @@ HUMAN_INTENT_NAMES = {
     "check_hotel_offers": "🎁 Special Offers & Discounts",
     "check_in": "⏰ Check-in Time",
     "check_out": "⏰ Check-out Time",
-    "checkin_checkout": "⏰ Check-in / Check-out Times",
     "book_parking_space": "🚗 Free Parking Info",
     "bring_pets": "🐾 Pet Policy",
     "check_menu": "🍳 Breakfast & Dining",
@@ -234,68 +240,136 @@ HUMAN_INTENT_NAMES = {
     "redeem_points": "🎁 Reward Points",
     "get_refund": "💵 Refund Status",
     "shuttle_service": "🚌 Shuttle Transport",
-    "search_hotel": "🏨 Hotel Overview",
-    "greeting": "👋 Greeting",
-    "goodbye": "👋 Goodbye",
-    "location": "📍 Location & Address",
-    "contact": "📞 Contact Details",
-    "payment": "💳 Payment Options",
-    "availability": "📅 Check Availability"
+    "search_hotel": "🏨 Hotel Overview"
 }
+
+
+def is_pure_greeting(text: str) -> bool:
+    """Check if the user utterance is purely a greeting without other domain requests."""
+    if not text:
+        return False
+    import re
+    clean = re.sub(r"[^\w\s]", "", text.strip().lower())
+    words = clean.split()
+    greeting_words = {
+        "hi", "hello", "hey", "helo", "hllo", "hallo", "hiii", "hiya", "howdy",
+        "greetings", "good", "morning", "afternoon", "evening", "day", "there", "yo"
+    }
+    return len(words) >= 1 and len(words) <= 3 and all(w in greeting_words for w in words)
+
+
+def has_greeting_prefix(text: str) -> bool:
+    """Check if the utterance begins with a friendly greeting."""
+    if not text:
+        return False
+    import re
+    return bool(re.search(
+        r"^(?:hi|hello|hey|helo|hiii|hiya|howdy|greetings|good\s+(?:morning|afternoon|evening))\b",
+        text.strip().lower()
+    ))
+
+
+def get_greeting_response() -> str:
+    """Generate a warm, friendly welcome message and feature directory."""
+    return (
+        f"👋 **Hello! Welcome to {HOTEL_NAME}.**\n\n"
+        f"I'm **BookMate**, your personal hotel concierge. How may I assist you today?\n\n"
+        f"You can ask me to:\n"
+        f"- 🛏️ **Book a Room** *(e.g. 'I want to book a Deluxe Room')*\n"
+        f"- 💰 **Check Room Rates & Pricing** *(e.g. 'What are your room rates?')*\n"
+        f"- 🔍 **Check Booking Status & Invoices** *(e.g. 'Check booking BK1021' or by phone)*\n"
+        f"- 🏊 **Explore Resort Facilities** *(e.g. 'What facilities do you have?')*\n"
+        f"- 🍳 **Breakfast, Dining & Pet Policies**\n"
+        f"- ❌ **Cancel or Modify Reservations**"
+    )
 
 
 def generate_fallback_response(user_query, predictor, confidence=0.0):
     """
-    Generate dynamic Top-K candidate recommendation or general help menu for low confidence input.
+    Generate single explicit intent confirmation or domain-scoped help menu.
     """
-    if confidence < 0.20:
-        return (
-            "Sorry, I am not quite sure what you mean.\n\n"
-            "BookMate currently assists with hotel services. You can ask about:\n"
-            "• 🏨 **Room Booking & Reservations**\n"
-            "• 💰 **Room Prices & Availability**\n"
-            "• 🏊 **Resort Facilities & Breakfast**\n"
-            "• ⏰ **Check-in / Check-out Times**\n"
-            "• 🚗 **Free Parking & Contact Details**"
-        )
-    
-    top_result = predictor.predict_top(user_query, top_k=3)
-    top_predictions = top_result.get("top_predictions", [])
+    # 1. Medium Confidence (0.28 <= confidence < 0.60): Explicit confirmation of the single highest intent
+    if confidence >= 0.28:
+        top_result = predictor.predict_top(user_query, top_k=1)
+        top_predictions = top_result.get("top_predictions", [])
 
-    candidates = []
-    for item in top_predictions:
-        intent_tag = item["intent"]
-        display_name = HUMAN_INTENT_NAMES.get(intent_tag, intent_tag.replace("_", " ").title())
-        conf_pct = item["confidence"]
-        candidates.append(f"• **{display_name}** ({conf_pct:.1%})")
+        if top_predictions:
+            top_intent = top_predictions[0]["intent"]
+            display_name = HUMAN_INTENT_NAMES.get(top_intent, top_intent.replace("_", " ").title())
 
-    if candidates:
-        return (
-            "Sorry, I am not quite sure what you mean. Were you looking for one of these options?\n\n"
-            + "\n".join(candidates) + "\n\n"
-            "Please feel free to rephrase your question or select a topic above!"
-        )
+            return (
+                f"It sounds like you're asking about **{display_name}** ({confidence:.1%}). Is that correct?\n\n"
+                f"If so, please let me know or feel free to rephrase your request, and I'll be glad to assist!"
+            )
 
+    # 2. Low Confidence (< 0.28 or Out-of-Domain): Explain hotel-specific scope
     return (
-        "Sorry, I didn't quite understand that. Could you please rephrase your request?\n\n"
-        "You can ask me about room booking, prices, facilities, breakfast, parking, or check-in/out times."
+        f"I apologize, but I may not be able to assist with general topics or services outside **{HOTEL_NAME}**.\n\n"
+        f"As the dedicated virtual concierge for **{HOTEL_NAME}**, I specialize strictly in hotel inquiries and reservations. I can help you with:\n"
+        f"- 🏨 **Book, Modify & Cancel Reservations**\n"
+        f"- 💰 **Room Rates & Availability Check**\n"
+        f"- 🏊 **Resort Facilities & Operating Hours**\n"
+        f"- 🍳 **Breakfast, Dining & Pet Policy**\n"
+        f"- ⏰ **Check-in / Check-out Times & Free Parking**\n\n"
+        f"Please let me know how I can assist with your stay at **{HOTEL_NAME}**!"
     )
 
 
-def get_response(intent, entities=None):
+def get_response(intent: str, entities: dict | None = None, sentiment: dict | None = None) -> str:
     """
-    Return a response based on the predicted intent and extracted entities.
+    Return a response based on the predicted intent, dynamically bound extracted entities,
+    and optional sentiment empathy awareness.
     """
+    response_text = None
+
     if entities and isinstance(entities, dict):
         room_type = entities.get("room_type")
-        if room_type and intent in ["check_hotel_prices", "room_price"]:
-            if room_type in ROOM_PRICES:
-                return f"The rate for **{room_type}** is **{ROOM_PRICES[room_type]}** per night."
+        guests = entities.get("guests")
 
-    return random.choice(
-        responses.get(
-            intent,
-            ["I'm sorry, I didn't understand your question. Could you please rephrase it?"]
+        # 1. Specific Room Pricing Card
+        if room_type and intent == "check_hotel_prices":
+            if room_type in ROOM_DETAILS:
+                response_text = get_single_room_card(room_type)
+
+        # 2. Guest Count Recommendation
+        elif guests and intent == "check_hotel_prices":
+            if guests >= 4:
+                response_text = (
+                    f"For a group of **{guests} guests**, we highly recommend our **Family Suite** (RM450/night, sleeps up to 5) "
+                    f"or **Ocean Villa** (RM780/night with private pool)!\n\n"
+                    + get_room_price_table()
+                )
+            elif guests == 1 or guests == 2:
+                response_text = (
+                    f"For **{guests} guest{'s' if guests > 1 else ''}**, our **Standard Room** (RM180/night) or **Deluxe Room** (RM280/night) "
+                    f"would be a great fit!\n\n"
+                    + get_room_price_table()
+                )
+
+    if response_text is None:
+        response_text = random.choice(
+            responses.get(
+                intent,
+                ["I'm sorry, I didn't understand your question. Could you please rephrase it?"]
+            )
         )
-    )
 
+    # Prepend empathetic apology if user sentiment is strongly negative/frustrated
+    if sentiment and sentiment.get("is_frustrated"):
+        empathy_options = [
+            (
+                "🙏 **We sincerely apologize for your unpleasant experience.** "
+                "We deeply understand your frustration and are prioritizing your request.\n\n"
+            ),
+            (
+                "🙏 **We are truly sorry to hear about this issue.** "
+                "Your satisfaction is our top priority, and we are here to help make things right.\n\n"
+            ),
+            (
+                "🙏 **We apologize for the inconvenience and frustration caused.** "
+                "Please allow us to assist and resolve this matter for you immediately.\n\n"
+            )
+        ]
+        response_text = random.choice(empathy_options) + response_text
+
+    return response_text

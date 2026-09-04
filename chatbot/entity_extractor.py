@@ -213,9 +213,7 @@ class EntityExtractor:
                 return number
 
         # 3. "for N" booking context
-
-        # Only accept if N is NOT followed by:
-        # nights / rooms / days
+        # Only accept if N is NOT followed by: nights / rooms / days
         numeric_for_match = re.search(
             r"\b(?:for|with)\s+(\d+)"
             r"(?!\s*(?:night|nights|room|rooms|day|days))"
@@ -225,6 +223,10 @@ class EntityExtractor:
 
         if numeric_for_match:
             return int(numeric_for_match.group(1))
+
+        # 4. Solo traveler / myself / alone / single guest
+        if re.search(r"\b(?:just\s+me|myself|alone|solo|single\s+(?:person|guest|traveler|room))\b", text_lower):
+            return 1
 
         return None
         
@@ -276,13 +278,11 @@ class EntityExtractor:
         Convert recognized date expressions into YYYY-MM-DD.
 
         Supports:
-            YYYY-MM-DD
-            YYYY/MM/DD
-            DD-MM-YYYY
-            DD/MM/YYYY
-            DD.MM.YYYY
-            today
-            tomorrow
+            YYYY-MM-DD, YYYY/MM/DD, YYYY.MM.DD
+            DD-MM-YYYY, DD/MM/YYYY, DD.MM.YYYY
+            DD-MM-YY, DD/MM/YY
+            1st October 2026, 15 Oct, October 1st, Oct 5 2026
+            today, tomorrow
         """
 
         if not date_string:
@@ -291,18 +291,22 @@ class EntityExtractor:
         if reference_date is None:
             reference_date = datetime.now()
 
+        ref_year = reference_date.year
+
         value = date_string.strip().lower()
+        # Clean ordinal suffixes: 1st -> 1, 2nd -> 2, 3rd -> 3, 4th -> 4
+        value_cleaned = re.sub(r"(\d+)(st|nd|rd|th)\b", r"\1", value)
 
         # Relative dates
-        if value == "today":
+        if value_cleaned == "today":
             return reference_date.strftime("%Y-%m-%d")
 
-        if value == "tomorrow":
+        if value_cleaned == "tomorrow":
             return (
                 reference_date + timedelta(days=1)
             ).strftime("%Y-%m-%d")
 
-        # Explicit date formats
+        # Explicit numeric date formats
         formats = [
             "%Y-%m-%d",
             "%Y/%m/%d",
@@ -318,7 +322,27 @@ class EntityExtractor:
 
         for fmt in formats:
             try:
-                parsed = datetime.strptime(value, fmt)
+                parsed = datetime.strptime(value_cleaned, fmt)
+                return parsed.strftime("%Y-%m-%d")
+            except ValueError:
+                continue
+
+        # Natural month name formats (e.g. "1 October 2026", "October 1 2026", "1 Oct", "Oct 1")
+        has_explicit_year = bool(re.search(r"\b\d{4}\b", value_cleaned))
+        test_value = value_cleaned if has_explicit_year else f"{value_cleaned} {ref_year}"
+
+        month_formats = [
+            "%d %B %Y", "%d %b %Y",
+            "%B %d %Y", "%b %d %Y",
+            "%B %d, %Y", "%b %d, %Y"
+        ]
+
+        for fmt in month_formats:
+            try:
+                parsed = datetime.strptime(test_value, fmt)
+                if not has_explicit_year:
+                    if parsed.date() < reference_date.date():
+                        parsed = parsed.replace(year=ref_year + 1)
                 return parsed.strftime("%Y-%m-%d")
             except ValueError:
                 continue
@@ -331,7 +355,7 @@ class EntityExtractor:
         reference_date: datetime | None = None
     ) -> dict:
         """
-        Extract check-in and check-out dates.
+        Extract check-in and check-out dates supporting numeric and natural month dates.
 
         Returns:
             {
@@ -353,34 +377,9 @@ class EntityExtractor:
 
         text_lower = text.lower()
 
-        # 1. Date regex (ISO YYYY-MM-DD / YYYY/MM/DD and UK/EU DD/MM/YYYY / DD-MM-YYYY)
-        dates_found = re.findall(
-            r"\b(?:\d{4}[-/.]\d{1,2}[-/.]\d{1,2}|\d{1,2}[-/.]\d{1,2}[-/.]\d{2,4})\b",
-            text_lower
-        )
-
-        if len(dates_found) >= 2:
-            results["check_in"] = self._normalize_date(
-                dates_found[0],
-                reference_date
-            )
-
-            results["check_out"] = self._normalize_date(
-                dates_found[1],
-                reference_date
-            )
-
-            return results
-
-        if len(dates_found) == 1:
-            results["check_in"] = self._normalize_date(
-                dates_found[0],
-                reference_date
-            )
-
-        # 2. from X to Y
+        # 1. from X to Y pattern
         from_to_match = re.search(
-            r"\bfrom\s+(.+?)\s+to\s+(.+?)(?:\.|,|$)",
+            r"\bfrom\s+(.+?)\s+to\s+(.+?)(?:\.|\,|$|\s+(?:for|with|under))",
             text_lower
         )
 
@@ -388,34 +387,43 @@ class EntityExtractor:
             checkin_raw = from_to_match.group(1).strip()
             checkout_raw = from_to_match.group(2).strip()
 
-            checkin = self._normalize_date(
-                checkin_raw,
-                reference_date
-            )
-
-            checkout = self._normalize_date(
-                checkout_raw,
-                reference_date
-            )
+            checkin = self._normalize_date(checkin_raw, reference_date)
+            checkout = self._normalize_date(checkout_raw, reference_date)
 
             if checkin:
                 results["check_in"] = checkin
-
             if checkout:
                 results["check_out"] = checkout
 
+            if results["check_in"] and results["check_out"]:
+                return results
+
+        # 2. Comprehensive Date regex (numeric ISO/EU and month names like "Oct 1st", "15 October 2026")
+        date_pattern = (
+            r"\b(?:"
+            r"\d{4}[-/.]\d{1,2}[-/.]\d{1,2}|"
+            r"\d{1,2}[-/.]\d{1,2}[-/.]\d{2,4}|"
+            r"(?:jan|january|feb|february|mar|march|apr|april|may|jun|june|jul|july|aug|august|sep|sept|september|oct|october|nov|november|dec|december)\s+\d{1,2}(?:st|nd|rd|th)?(?:\s*,?\s*\d{4})?|"
+            r"\d{1,2}(?:st|nd|rd|th)?\s+(?:jan|january|feb|february|mar|march|apr|april|may|jun|june|jul|july|aug|august|sep|sept|september|oct|october|nov|november|dec|december)(?:\s*,?\s*\d{4})?"
+            r")\b"
+        )
+
+        dates_found = re.findall(date_pattern, text_lower)
+
+        if len(dates_found) >= 2:
+            results["check_in"] = self._normalize_date(dates_found[0], reference_date)
+            results["check_out"] = self._normalize_date(dates_found[1], reference_date)
             return results
 
-        # 3. tomorrow / today
-        if re.search(r"\btomorrow\b", text_lower):
-            results["check_in"] = (
-                reference_date + timedelta(days=1)
-            ).strftime("%Y-%m-%d")
+        if len(dates_found) == 1:
+            results["check_in"] = self._normalize_date(dates_found[0], reference_date)
 
-        elif re.search(r"\btoday\b", text_lower):
-            results["check_in"] = (
-                reference_date
-            ).strftime("%Y-%m-%d")
+        # 3. Relative keywords: tomorrow / today
+        if not results["check_in"]:
+            if re.search(r"\btomorrow\b", text_lower):
+                results["check_in"] = (reference_date + timedelta(days=1)).strftime("%Y-%m-%d")
+            elif re.search(r"\btoday\b", text_lower):
+                results["check_in"] = reference_date.strftime("%Y-%m-%d")
 
         return results
 
@@ -426,6 +434,9 @@ class EntityExtractor:
 
         Examples:
             "My name is John Doe"
+            "I'm John Doe"
+            "I am John Doe"
+            "Guest: John Doe"
             "Name: John Doe"
             "Please book under John Doe"
         """
@@ -436,10 +447,22 @@ class EntityExtractor:
         patterns = [
             r"\bmy\s+name\s+is\s+([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ' -]{1,79})",
             r"\bmy\s+name's\s+([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ' -]{1,79})",
+            r"\bi\s*'?\s*m\s+([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ' -]{1,79})",
+            r"\bi\s+am\s+([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ' -]{1,79})",
+            r"\bthis\s+is\s+([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ' -]{1,79})",
+            r"\bguest(?:\s+name)?\s*:\s*([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ' -]{1,79})",
             r"\bname\s*:\s*([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ' -]{1,79})",
             r"\bname\s+is\s+([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ' -]{1,79})",
-            r"\bbook\s+(?:the\s+)?reservation\s+under\s+([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ' -]{1,79})"
+            r"\bbook\s+(?:the\s+)?reservation\s+under\s+([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ' -]{1,79})",
+            r"\bunder\s+(?:the\s+name\s+of\s+)?([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ' -]{1,79})"
         ]
+
+        NON_NAME_WORDS = {
+            "looking", "trying", "wondering", "interested", "planning", "booking",
+            "checking", "inquiring", "here", "ready", "asking", "calling", "writing",
+            "just", "traveling", "staying", "a", "an", "the", "not", "so", "very",
+            "hotel", "room", "deluxe", "standard", "suite", "villa", "guest", "guests"
+        }
 
         for pattern in patterns:
             match = re.search(
@@ -453,12 +476,19 @@ class EntityExtractor:
 
                 # Remove trailing booking-related words
                 name = re.split(
-                    r"\s+(?:and|with|for|email|phone)\b",
+                    r"\s+(?:and|with|for|email|phone|from|to|staying|booking)\b",
                     name,
                     flags=re.IGNORECASE
                 )[0].strip()
 
-                if len(name) >= 2 and not name.isdigit():
+                words = name.split()
+                if not words:
+                    continue
+
+                if words[0].lower() in NON_NAME_WORDS:
+                    continue
+
+                if len(name) >= 2 and not name.isdigit() and not any(w.lower() in ["room", "hotel", "deluxe", "villa"] for w in words):
                     return name.title()
 
         return None
@@ -518,10 +548,12 @@ class EntityExtractor:
     # BOOKING ID
     def extract_booking_id(self, text: str) -> str | None:
         """
-        Extract booking ID.
+        Extract booking ID with support for BK1234, #BK1234, BK-1234, BK 1234.
 
         Examples:
             BK1234
+            #BK1234
+            BK 1234
             BK-1234
             BK_1234
         """
@@ -530,7 +562,7 @@ class EntityExtractor:
             return None
 
         match = re.search(
-            r"\b(BK[-_]?\d{4,6})\b",
+            r"\b#?(BK[-\s_]?\d{4,6})\b",
             text,
             re.IGNORECASE
         )
@@ -541,6 +573,8 @@ class EntityExtractor:
                 .upper()
                 .replace("-", "")
                 .replace("_", "")
+                .replace(" ", "")
+                .replace("#", "")
             )
 
         return None
@@ -586,7 +620,7 @@ class EntityExtractor:
         reference_date: datetime | None = None
     ) -> dict:
         """
-        Perform complete entity extraction.
+        Perform complete entity extraction with intelligent date inference.
         """
 
         dates = self.extract_dates(
@@ -596,14 +630,21 @@ class EntityExtractor:
 
         contact = self.extract_contact_info(text)
 
+        explicit_nights = self.extract_nights(text)
+
+        # Smart Inference: check-in + nights => check-out
+        if dates["check_in"] and not dates["check_out"] and explicit_nights and explicit_nights > 0:
+            try:
+                cin_dt = datetime.strptime(dates["check_in"], "%Y-%m-%d")
+                dates["check_out"] = (cin_dt + timedelta(days=explicit_nights)).strftime("%Y-%m-%d")
+            except Exception:
+                pass
+
         calculated_nights = self.calculate_nights(
             dates["check_in"],
             dates["check_out"]
         )
 
-        explicit_nights = self.extract_nights(text)
-
-        # Prefer calculated nights when both dates exist
         nights = (
             calculated_nights
             if calculated_nights is not None
@@ -653,36 +694,3 @@ def extract_entities(
         text,
         reference_date
     )
-
-# Testing
-if __name__ == "__main__":
-    test_reference_date = datetime(2026, 8, 12)
-
-    test_queries = [
-        "I want to book a Deluxe room for 2 guests from 2026-10-01 to 2026-10-05.",
-
-        "I need 2 standard rooms for 4 people.",
-
-        "How much is the ocean villa for 3 nights?",
-
-        "Can I reserve a family suite for 4 people starting tomorrow?",
-
-        "My name is John Doe, email john@example.com, phone +60123456789.",
-
-        "Please check my booking BK12345."
-    ]
-
-    print("=== Testing EntityExtractor ===")
-
-    for query in test_queries:
-
-        result = extract_entities(
-            query,
-            reference_date=test_reference_date
-        )
-
-        print(f"\nQuery: {query}")
-        print(
-            "Extracted Entities:",
-            result["entities_found"]
-        )

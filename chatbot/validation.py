@@ -54,17 +54,13 @@ def parse_date(
     reference_date: date | None = None
 ) -> date | None:
     """
-    Parse a date string into datetime.date.
+    Parse a date string into datetime.date supporting absolute and rich relative formats.
 
     Supports:
-        YYYY-MM-DD
-        YYYY/MM/DD
-        YYYY.MM.DD
-        DD-MM-YYYY
-        DD/MM/YYYY
-        DD.MM.YYYY
-        today
-        tomorrow
+        - Absolute dates: YYYY-MM-DD, DD-MM-YYYY, YYYY/MM/DD, DD/MM/YYYY, etc.
+        - Month names: 15 Oct 2026, 15 October 2026, Oct 15 2026, October 15, etc.
+        - Relative dates: today, tomorrow, tmrw, day after tomorrow, next week, next month
+        - Duration expressions: 1 night, 2 nights, 3 days, for 4 nights, in 2 days, etc.
 
     Returns:
         datetime.date or None
@@ -78,12 +74,31 @@ def parse_date(
     if reference_date is None:
         reference_date = datetime.now().date()
 
-    # Relative dates
-    if clean_str == "today":
+    # Relative words
+    if clean_str in ["today", "tonight", "tdy"]:
         return reference_date
 
-    if clean_str == "tomorrow":
+    if clean_str in ["tomorrow", "tmrw", "tomorow", "tomo"]:
         return reference_date + timedelta(days=1)
+
+    if clean_str in ["day after tomorrow", "the day after tomorrow", "overmorrow"]:
+        return reference_date + timedelta(days=2)
+
+    if clean_str in ["next week", "in a week", "1 week", "after a week"]:
+        return reference_date + timedelta(days=7)
+
+    if clean_str in ["next month", "in a month", "1 month"]:
+        return reference_date + timedelta(days=30)
+
+    # Relative night/day duration patterns (e.g., "1 night", "3 nights", "for 2 days", "after 4 nights", "2d", "3n")
+    dur_match = re.search(r"(?:for|stay|in|after)?\s*(\d+)\s*(?:night|nights|night's|day|days|d|n)\b", clean_str)
+    if dur_match:
+        try:
+            num_days = int(dur_match.group(1))
+            if 1 <= num_days <= 90:
+                return reference_date + timedelta(days=num_days)
+        except Exception:
+            pass
 
     formats = [
         "%Y-%m-%d",
@@ -95,15 +110,33 @@ def parse_date(
         "%d.%m.%Y",
 
         "%d-%m-%y",
-        "%d/%m/%y"
+        "%d/%m/%y",
+
+        "%d %b %Y",
+        "%d %B %Y",
+        "%b %d %Y",
+        "%B %d %Y",
+        "%b %d, %Y",
+        "%B %d, %Y",
+        "%d %b",
+        "%d %B",
+        "%b %d",
+        "%B %d"
     ]
 
     for fmt in formats:
         try:
-            return datetime.strptime(
+            dt = datetime.strptime(
                 clean_str,
                 fmt
             ).date()
+
+            # If no year was provided in format, assume current reference year
+            if dt.year == 1900:
+                dt = dt.replace(year=reference_date.year)
+                if dt < reference_date:
+                    dt = dt.replace(year=reference_date.year + 1)
+            return dt
 
         except ValueError:
             continue
@@ -140,7 +173,7 @@ def validate_checkin_date(
             False,
             None,
             "⚠️ Invalid check-in date. "
-            "Please provide a valid date such as **2026-10-01** "
+            "Please provide a valid date such as **2026-10-01**, **today**, "
             "or **tomorrow**."
         )
 
@@ -166,7 +199,7 @@ def validate_checkout_date(
     reference_date: date | None = None
 ) -> tuple[bool, str | None, str | None]:
     """
-    Validate check-out date.
+    Validate check-out date with support for relative offsets (e.g. 'tomorrow', '3 nights').
 
     Rules:
         - Must be a valid date
@@ -175,19 +208,6 @@ def validate_checkout_date(
 
     if reference_date is None:
         reference_date = datetime.now().date()
-
-    parsed_out = parse_date(
-        checkout_str,
-        reference_date
-    )
-
-    if not parsed_out:
-        return (
-            False,
-            None,
-            "⚠️ Invalid check-out date. "
-            "Please provide a valid date such as **2026-10-05**."
-        )
 
     parsed_in = parse_date(
         checkin_str,
@@ -199,6 +219,21 @@ def validate_checkout_date(
             False,
             None,
             "⚠️ Please provide a valid check-in date first."
+        )
+
+    # Note: When validating checkout, relative terms like "tomorrow", "3 nights", "day after tomorrow"
+    # are calculated relative to the check-in date!
+    parsed_out = parse_date(
+        checkout_str,
+        reference_date=parsed_in
+    )
+
+    if not parsed_out:
+        return (
+            False,
+            None,
+            "⚠️ Invalid check-out date. "
+            "Please provide a valid date such as **2026-10-05**, **tomorrow**, or **3 nights**."
         )
 
     if parsed_in < reference_date:
@@ -354,10 +389,10 @@ def validate_room_type(
         None,
         "⚠️ We couldn't recognize that room type. "
         "Please choose from:\n"
-        "• **Standard Room**\n"
-        "• **Deluxe Room**\n"
-        "• **Family Suite**\n"
-        "• **Ocean Villa**"
+        "- **Standard Room**\n"
+        "- **Deluxe Room**\n"
+        "- **Family Suite**\n"
+        "- **Ocean Villa**"
     )
 
 
@@ -489,6 +524,58 @@ def validate_name(
     return (
         True,
         clean_name.title(),
+        None
+    )
+
+
+# PHONE VALIDATION & DIGIT MATCHING
+def clean_phone_digits(phone_str: str) -> str:
+    """Extract clean numeric digits from phone string for robust matching."""
+    if not phone_str:
+        return ""
+    digits = re.sub(r"\D", "", str(phone_str))
+    # Normalize Malaysian leading 60 (e.g. 60123456789 -> 0123456789)
+    if digits.startswith("60") and len(digits) >= 10:
+        digits = "0" + digits[2:]
+    return digits
+
+
+def validate_phone(
+    phone_input: str
+) -> tuple[bool, str | None, str | None]:
+    """
+    Validate contact phone number.
+
+    Allows:
+        +60 12-345 6789
+        0123456789
+        011-2345678
+        +1 555-123-4567
+
+    Rejects:
+        numbers under 8 digits or over 16 digits
+        letters without numbers
+    """
+    if not phone_input or not isinstance(phone_input, str):
+        return (
+            False,
+            None,
+            "⚠️ Please enter a valid contact phone number."
+        )
+
+    clean_digits = re.sub(r"\D", "", phone_input)
+
+    if len(clean_digits) < 8 or len(clean_digits) > 16:
+        return (
+            False,
+            None,
+            "⚠️ Invalid phone number length. "
+            "Please provide a valid phone number (e.g. **+60 12-345 6789**)."
+        )
+
+    return (
+        True,
+        phone_input.strip(),
         None
     )
 
@@ -642,85 +729,3 @@ def validate_booking_entities(
         "validated": validated,
         "errors": errors
     }
-
-# Testing
-if __name__ == "__main__":
-
-    test_reference_date = date(2026, 8, 12)
-
-    test_cases = [
-
-        {
-            "name": "Valid booking",
-            "entities": {
-                "room_type": "Deluxe Room",
-                "rooms": 1,
-                "guests": 2,
-                "check_in": "2026-10-01",
-                "check_out": "2026-10-05",
-                "name": "John Doe"
-            }
-        },
-
-        {
-            "name": "Past check-in",
-            "entities": {
-                "room_type": "Standard Room",
-                "rooms": 1,
-                "guests": 2,
-                "check_in": "2026-08-01",
-                "check_out": "2026-08-05",
-                "name": "John Doe"
-            }
-        },
-
-        {
-            "name": "Too many guests",
-            "entities": {
-                "room_type": "Ocean Villa",
-                "rooms": 1,
-                "guests": 25,
-                "check_in": "2026-10-01",
-                "check_out": "2026-10-05",
-                "name": "John Doe"
-            }
-        },
-
-        {
-            "name": "Invalid checkout",
-            "entities": {
-                "room_type": "Family Suite",
-                "rooms": 1,
-                "guests": 3,
-                "check_in": "2026-10-05",
-                "check_out": "2026-10-01",
-                "name": "John Doe"
-            }
-        },
-
-        {
-            "name": "Invalid name",
-            "entities": {
-                "room_type": "Deluxe Room",
-                "rooms": 1,
-                "guests": 2,
-                "check_in": "2026-10-01",
-                "check_out": "2026-10-05",
-                "name": "12345"
-            }
-        }
-    ]
-
-    print("=== Testing Booking Validators ===")
-
-    for test in test_cases:
-
-        result = validate_booking_entities(
-            test["entities"],
-            test_reference_date
-        )
-
-        print(f"\n[{test['name']}]")
-        print("Valid:", result["valid"])
-        print("Validated:", result["validated"])
-        print("Errors:", result["errors"])

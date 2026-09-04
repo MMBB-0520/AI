@@ -14,11 +14,11 @@ from sklearn.preprocessing import LabelEncoder
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.pipeline import Pipeline
 from sklearn.calibration import CalibratedClassifierCV
+from sklearn.svm import SVC
 from sklearn.metrics import (
     accuracy_score, precision_score, recall_score, f1_score,
     confusion_matrix, classification_report, ConfusionMatrixDisplay
 )
-from sklearn.svm import SVC
 
 # PROJECT PATH
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -55,11 +55,14 @@ def main():
         X_raw, y, test_size=0.20, random_state=42, stratify=y
     )
 
-    print("Applying NLP Preprocessing...")
+    print(f"Total rows: {len(df)}       | Unique intents: {len(label_encoder.classes_)}")
+    print(f"Training samples: {len(X_train_raw)} | Testing samples: {len(X_test_raw)}")
+
+    print("\nApplying NLP Preprocessing...")
     X_train_cleaned = X_train_raw.apply(preprocess_text)
     X_test_cleaned = X_test_raw.apply(preprocess_text)
 
-    # 1. Build the Pipeline with CalibratedClassifierCV
+    # 1. Build Pipeline with CalibratedClassifierCV for Calibrated Probabilities
     base_svm = SVC(kernel="linear", random_state=42, class_weight="balanced")
     calibrated_svm = CalibratedClassifierCV(estimator=base_svm, ensemble=False)
 
@@ -68,19 +71,19 @@ def main():
         ('classifier', calibrated_svm)
     ])
 
-    # 2. Define Hyperparameter Grid
+    # 2. Hyperparameter Grid
     param_grid = {
-        'classifier__estimator__C': [0.1, 1.0, 10.0]
+        'classifier__estimator__C': [0.5, 1.0, 5.0, 10.0]
     }
 
     # 3. GridSearchCV for Optimization
-    print("\nRunning GridSearchCV (This may take a moment)...")
+    print("\nRunning GridSearchCV for Support Vector Machine...")
     grid_search = GridSearchCV(pipeline, param_grid, cv=5, scoring='f1_macro', n_jobs=-1)
     grid_search.fit(X_train_cleaned, y_train)
 
     print(f"Best Parameters: {grid_search.best_params_}")
     
-    # Extract the best model and vectorizer from the winning pipeline
+    # Extract the best model and vectorizer from winning pipeline
     best_pipeline = grid_search.best_estimator_
     best_vectorizer = best_pipeline.named_steps['vectorizer']
     best_classifier = best_pipeline.named_steps['classifier']
@@ -91,61 +94,42 @@ def main():
 
     # Evaluation
     print("\n" + "=" * 60)
-    print("SVM Evaluation Results")
+    print("Support Vector Machine Evaluation Results")
     print("=" * 60)
     print(f"Accuracy  : {accuracy_score(y_test, y_pred):.4f}")
     print(f"Precision : {precision_score(y_test, y_pred, average='macro', zero_division=0):.4f}")
     print(f"Recall    : {recall_score(y_test, y_pred, average='macro', zero_division=0):.4f}")
     print(f"F1 Score  : {f1_score(y_test, y_pred, average='macro', zero_division=0):.4f}")
 
-    print("\nSaving Optimized SVM Models...")
+    print("\nClassification Report:")
+    print(classification_report(y_test, y_pred, target_names=label_encoder.classes_, zero_division=0))
+
+    # Save artifacts
+    print("\nSaving Trained Support Vector Machine Model...")
     joblib.dump(best_classifier, MODEL_PATH)
     joblib.dump(best_vectorizer, VECTORIZER_PATH)
     joblib.dump(label_encoder, ENCODER_PATH)
-    print("SVM training completed successfully!")
+    print(f"Model saved      : {MODEL_PATH}")
+    print(f"Vectorizer saved : {VECTORIZER_PATH}")
+    print(f"Encoder saved    : {ENCODER_PATH}")
 
-    print(
-        "Generating confusion matrix..."
-    )
-
-    cm = confusion_matrix(
-        y_test,
-        y_pred
-    )
-
-    fig, ax = plt.subplots(
-        figsize=(14, 12)
-    )
-
-    disp = ConfusionMatrixDisplay(
-        confusion_matrix=cm,
-        display_labels=label_encoder.classes_
-    )
-
-    disp.plot(
-        ax=ax,
-        xticks_rotation=90,
-        cmap="Blues",
-        colorbar=False
-    )
-
-    plt.title(
-        "SVM Intent Classification - Confusion Matrix"
-    )
-
+    # Confusion Matrix
+    print("\nGenerating confusion matrix...")
+    cm = confusion_matrix(y_test, y_pred)
+    fig, ax = plt.subplots(figsize=(16, 14))
+    disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=label_encoder.classes_)
+    disp.plot(ax=ax, xticks_rotation=90, cmap="Blues", colorbar=False, values_format='d')
+    plt.title("Support Vector Machine Intent Classification - Confusion Matrix", fontsize=16, pad=20, fontweight='bold')
+    plt.xlabel('Predicted Intent', fontsize=13, labelpad=10)
+    plt.ylabel('True Intent', fontsize=13, labelpad=10)
+    plt.xticks(fontsize=10)
+    plt.yticks(fontsize=10)
     plt.tight_layout()
-
-    plt.savefig(
-        CM_PATH,
-        dpi=200
-    )
-
+    plt.savefig(CM_PATH, dpi=300)
     plt.close()
+    print(f"Confusion matrix saved to: {CM_PATH}")
 
-    print(
-        f"Confusion matrix saved to:\n"
-        f"{CM_PATH}"
-    )
+    print("\nSupport Vector Machine training completed successfully!")
 
 if __name__ == "__main__":
     main()
